@@ -92,6 +92,13 @@
     - 設計参照: design.md §5(1.2〜1.4, 1.6)、§8(不正パス・デコード不可・null の各分岐を個別テスト。Mat 版との結果同一性を含む)
     - 検証コマンド: `dotnet test --filter "FullyQualifiedName~FaceDetectorTests"`
   - [x] 6.4 非同期契約(CancellationToken・キャンセル・並行呼び出し・Dispose 後)のテストと実装
+  - [x] 6.5 null Mat の異常系テスト追加(最終検証パネル指摘の修正)
+        _Requirements: 1.6_
+        _Boundary: FaceDetector_
+        _Depends: 6.2_
+    - 対象ファイル: `tests/Recognizer.Tests/FaceDetectorTests.cs`(変更)
+    - 設計参照: design.md §8(null → ArgumentNullException)。パネル指摘: 1.6 の null Mat 分岐のみ 1 ガード 1 テスト規律から漏れていた
+    - 検証コマンド: `dotnet test --filter "FullyQualifiedName~FaceDetectorTests"`
         _Requirements: 4.1, 4.2, 4.3, 4.5_
         _Boundary: FaceDetector_
         _Depends: 6.2_

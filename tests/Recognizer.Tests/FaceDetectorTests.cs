@@ -359,6 +359,19 @@ public sealed class FaceDetectorTests
         });
     }
 
+    // 異常系: null の Mat は ArgumentNullException を同期送出する(要件 1.6)
+    // Task を破棄(_ =)しても throw が起きることで「呼び出し時点の同期送出」を保証する。
+    [Fact]
+    public void DetectAsync_nullのMatはArgumentNullException()
+    {
+        using FaceDetector detector = new(FixturePath("face_nchw_transposed_f5.onnx"));
+
+        _ = Assert.Throws<ArgumentNullException>(() =>
+        {
+            _ = detector.DetectAsync((Mat)null!);
+        });
+    }
+
     // 異常系: null の imagePath は ArgumentNullException を同期送出する(要件 1.6)
     [Fact]
     public void DetectAsync_nullパスはArgumentNullException()
