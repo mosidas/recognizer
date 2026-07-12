@@ -1,0 +1,17 @@
+{
+  "workflow": "sdd",
+  "unit": "face-recognition",
+  "state": "completed",
+  "approvals": {
+    "requirements": true,
+    "design": true,
+    "tasks": true
+  },
+  "created": "2026-07-12",
+  "updated": "2026-07-12",
+  "frozen": {
+    "requirements.md": "0aadc2dae87f1622463cf8ebb4da10ddc83d5cf570a743bd52763c6c3e3880f2",
+    "design.md": "2abb10c68c55cce482635943f79a15efe67c07ed6e4a0a57072767755f930022",
+    "tasks.md": "d8c14bbcb6720ad4877520768630b25a604e9e439aa963b3826c5fa46eb2b0e2"
+  }
+}

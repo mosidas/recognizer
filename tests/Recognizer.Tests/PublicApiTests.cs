@@ -9,7 +9,7 @@ namespace Recognizer.Tests;
 /// </summary>
 public sealed class PublicApiTests
 {
-    // 公開してよい型(face-detection 要件 5.1 / object-detection 要件 6.1)。名前空間込みで厳密比較する。
+    // 公開してよい型(face-detection 要件 5.1 / object-detection 要件 6.1 / face-recognition 要件 7.1)。名前空間込みで厳密比較する。
     private static readonly string[] AllowedExportedTypeNames =
     [
         "Recognizer.FaceDetector",
@@ -17,6 +17,11 @@ public sealed class PublicApiTests
         "Recognizer.FaceLandmarks",
         "Recognizer.ObjectDetector",
         "Recognizer.ObjectDetection",
+        // face-recognition 7.1: 顔認証 unit で追加する公開型。
+        "Recognizer.FaceRecognizer",
+        "Recognizer.FaceComparisonStatus",
+        "Recognizer.FaceComparisonResult",
+        "Recognizer.FaceEmbeddingResult",
     ];
 
     // 依存を許可するパッケージ(要件 5.4)。OS 向け runtime パッケージを含む。
@@ -27,9 +32,9 @@ public sealed class PublicApiTests
         "OpenCvSharp4.official.runtime.linux-x64",
     ];
 
-    // face-detection 5.1 / object-detection 6.1: 公開型は Recognizer 名前空間の 5 型に厳密に限定される。
+    // face-detection 5.1 / object-detection 6.1 / face-recognition 7.1: 公開型は Recognizer 名前空間の 9 型に厳密に限定される。
     [Fact]
-    public void ExportedTypes_公開型は許可された5型のみ()
+    public void ExportedTypes_公開型は許可された9型のみ()
     {
         Type[] exported = typeof(FaceDetector).Assembly.GetExportedTypes();
 
@@ -69,6 +74,10 @@ public sealed class PublicApiTests
             "ObjectCandidate",
             "CocoClassNames",
             "ObjectOutputSpec",
+            // face-recognition 7.3: 顔切り出し・埋め込み前処理・埋め込みモデル仕様は内部実装として非公開。
+            "FaceCropper",
+            "EmbeddingPreprocessor",
+            "EmbeddingModelSpec",
         ];
 
         Type[] exported = typeof(FaceDetector).Assembly.GetExportedTypes();
