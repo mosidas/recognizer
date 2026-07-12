@@ -1,7 +1,7 @@
 {
   "workflow": "sdd",
   "unit": "face-recognition",
-  "state": "requirements-approved",
+  "state": "design-generated",
   "approvals": {
     "requirements": true,
     "design": false,
