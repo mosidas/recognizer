@@ -21,7 +21,7 @@
     - 検証コマンド: `python3 -m venv /tmp/onnx-venv && /tmp/onnx-venv/bin/pip install onnx && /tmp/onnx-venv/bin/python tools/generate_test_models.py` の後、6 ファイルの存在と各サイズが 100 KB 未満であること
 
 - [ ] 2. 純粋計算部品(テストファースト)
-  - [ ] 2.1 (P) NonMaxSuppression(IoU 計算・貪欲 NMS)のテストと実装
+  - [x] 2.1 (P) NonMaxSuppression(IoU 計算・貪欲 NMS)のテストと実装
         _Requirements: 3.2, 3.3_
         _Boundary: NonMaxSuppression_
         _Depends: 1.1_
