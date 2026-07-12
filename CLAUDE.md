@@ -3,7 +3,6 @@
 ## リポジトリ概要
 
 YOLO 形式の ONNX モデルで動作する顔検出・顔認証・物体検出のコアライブラリ(C# / .NET 10)。
-`workspaces/face-recognition` の `src/Recognizer` を、複雑化解消のために作り直したもの。
 
 - 公開 API 仕様: `docs/api-spec.md`(この仕様を正とする)
 - SDD 成果物: `docs/specs/<unit>/`(flow-sdd が生成)

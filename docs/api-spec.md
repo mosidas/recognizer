@@ -6,13 +6,13 @@
 
 YOLO 形式の ONNX モデルファイルで動作する、顔検出・顔認証・物体検出のクラスライブラリ。端末上(ローカル)で CPU 推論する。
 
-`workspaces/face-recognition` の `src/Recognizer` の作り直しであり、旧実装の機能のうち以下をスコープ外とする。
+以下をスコープ外とする。
 
 - 顔の角度計算(roll / pitch / yaw)
 - 同一人物か否かの閾値判定(ライブラリはコサイン類似度を返し、判定は呼び出し側の責務とする)
 - YOLOv3 形式(3 出力テンソル)のモデル対応
 - モデルファイル名によるクラス名リストの自動選択(Open Images 等)
-- `FaceDatabase` による 1:N 識別(埋め込み抽出 API の組み合わせで呼び出し側が実現できる)
+- 1:N 識別(登録済み顔集合との照合。埋め込み抽出 API の組み合わせで呼び出し側が実現できる)
 - デバッグ用コンソール出力(ライブラリはコンソール出力しない)
 
 ## 2. 対象環境
@@ -125,7 +125,7 @@ public sealed record FaceEmbeddingResult(
 
 - 顔認証は判定結果(同一人物か否か)を返さず、コサイン類似度を返す。閾値判定は呼び出し側の責務とする。
 - 顔未検出は予期されるエラーであり、例外ではなく結果型(`Status` / `null`)で表現する。
-- 埋め込み抽出時の顔領域切り出しは、周辺情報を含む正方形(パディング比率 0.2)で行う(旧実装と同等)。
+- 埋め込み抽出時の顔領域切り出しは、周辺情報を含む正方形(パディング比率 0.2)で行う。
 - `CompareEmbeddings` は次元不一致のとき `ArgumentException` を送出する。
 
 ### 3.5 ObjectDetector(物体検出)
@@ -177,4 +177,4 @@ docs/                    本仕様書・SDD 成果物
 
 - ライブラリはコンソール出力・ログ出力をしない(ロギング機構の導入はスコープ外)。
 - 内部実装(前処理・テンソル変換・NMS・出力パース)は公開しない(`internal`)。
-- 依存パッケージ: Microsoft.ML.OnnxRuntime、OpenCvSharp4(+ 各 OS 向け runtime パッケージ)。旧実装にあった Microsoft.ML、SixLabors.ImageSharp、System.Numerics.Tensors への依存は持たない。
+- 依存パッケージは Microsoft.ML.OnnxRuntime、OpenCvSharp4(+ 各 OS 向け runtime パッケージ)に限る。
