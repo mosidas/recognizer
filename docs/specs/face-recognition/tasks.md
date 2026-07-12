@@ -5,7 +5,7 @@
 
 ## タスク一覧
 
-- [ ] 1. テスト fixture 増設(埋め込み・入力依存検出)
+- [x] 1. テスト fixture 増設(埋め込み・入力依存検出)
   - [x] 1.1 fixture ⑰〜㉓ の生成スクリプト追加・生成・コミットと README 追記
         _Requirements: 2.2, 2.3, 2.6, 3.5, 4.3, 4.4_
         _Boundary: TestFixtures_
@@ -13,7 +13,7 @@
     - 設計参照: design.md §9 テスト戦略(fixture ⑰〜㉔ の入出力構成・入力依存/決定論の根拠)、design.md §6 ModelIntrospector (e-b)(e-d)(rank1 `[D]`/rank2 `[1,D]` の受理と非対応分岐の網羅。㉒=出力 `[2,4]`(rank2 先頭次元 ≠ 1)・㉓=出力 `[1,D]` の D 動的軸・㉔=rank1 `[4]` は §9 の集合を補うもの)、research.md §4(前処理の一次情報・生成方針)
     - 検証コマンド: `python3 -m venv /tmp/onnx-venv && /tmp/onnx-venv/bin/pip install onnx && /tmp/onnx-venv/bin/python tools/generate_test_models.py` の後、7 ファイルの存在と各サイズが 100 KB 未満であること・既存 16 fixture のバイト列が不変であること(`git diff --stat`)
 
-- [ ] 2. 埋め込みモデルの形式自動判別(契約先行)
+- [x] 2. 埋め込みモデルの形式自動判別(契約先行)
   - [x] 2.1 EmbeddingModelSpec と ModelIntrospector.IntrospectEmbedding のテストと実装(既定サイズ引数化を含む)
         _Requirements: 2.1, 2.2, 2.3, 2.6_
         _Boundary: ModelIntrospector_
@@ -22,7 +22,7 @@
     - 設計参照: design.md §6 ModelIntrospector 判別規則 (e-a)〜(e-d)、§2 Boundary Map(既定サイズ 112・既存呼び出しは 640 で挙動不変)
     - 検証コマンド: `dotnet test --filter "FullyQualifiedName~ModelIntrospectorTests"`(rank1 `[D]`/rank2 `[1,D]` の次元確定 / 動的入力軸 → 112 既定(⑲) / 非対応 4 分岐を各 fixture で個別行使: 複数出力 → 既存 `face_multi_output.onnx`・rank3 以上 → ⑳ `embed_unsupported_rank3.onnx`・rank2 先頭次元 ≠ 1 → ㉒ `embed_unsupported_rank2_batch2.onnx`・D 動的 → ㉓ `embed_unsupported_dynamic_dim.onnx` の各々で NotSupportedException / 入力判別不能は既存入力側非対応 fixture を再利用 / 既存検出判別テストの非回帰)
 
-- [ ] 3. 純粋計算部品(境界独立・並行可)
+- [x] 3. 純粋計算部品(境界独立・並行可)
   - [x] 3.1 (P) FaceCropper(正方形化・境界クリップ・退化/非交差検査)のテストと実装
         _Requirements: 3.4, 3.7_
         _Boundary: FaceCropper_
@@ -37,7 +37,7 @@
     - 設計参照: design.md §6 EmbeddingPreprocessor(`(x−127.5)/128` 正規化・Layout 別詰め順)、research.md §2(正規化式の一次情報)
     - 検証コマンド: `dotnet test --filter "FullyQualifiedName~EmbeddingPreprocessorTests"`(単色画像で正規化値・NCHW/NHWC の要素配置を照合)
 
-- [ ] 4. 公開結果型(データのみ・境界独立)
+- [x] 4. 公開結果型(データのみ・境界独立)
   - [x] 4.1 (P) FaceComparisonStatus / FaceComparisonResult / FaceEmbeddingResult の定義
         _Requirements: 7.1, 7.2_
         _Boundary: ResultTypes_
@@ -45,7 +45,7 @@
     - 設計参照: design.md §7 データモデル(api-spec 3.4 と文字単位一致・public sealed record / public enum)
     - 検証コマンド: `dotnet build`
 
-- [ ] 5. FaceRecognizer 公開 API(パイプライン統合)
+- [x] 5. FaceRecognizer 公開 API(パイプライン統合)
   - [x] 5.1 (P) CompareEmbeddings(static コサイン類似度)のテストと実装
         _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5_
         _Boundary: FaceRecognizer_
@@ -88,7 +88,7 @@
     - 設計参照: design.md §10(チェックポイント・セッション並行 Run 安全・ロックなし)、§6 FaceRecognizer(実装方針)
     - 検証コマンド: `dotnet test --filter "FullyQualifiedName~FaceRecognizerTests"`(キャンセル済みトークン → OperationCanceledException・同一インスタンスへの並行呼び出しが単独時と同一結果)
 
-- [ ] 6. 公開 API サーフェスと非回帰の検証
+- [x] 6. 公開 API サーフェスと非回帰の検証
   - [x] 6.1 PublicApiTests の 9 型更新・追加 internal 型検査・全体 green 確認
         _Requirements: 7.1, 7.3, 7.4, 7.5_
         _Boundary: PublicApiSurface_
