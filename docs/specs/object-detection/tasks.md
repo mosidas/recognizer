@@ -47,7 +47,7 @@
     - 検証コマンド: `dotnet test --filter "FullyQualifiedName~ObjectDetectorTests"`
 
 - [ ] 5. DetectAsync 統合
-  - [ ] 5.1 DetectAsync(Mat)のパイプライン統合(クラス単位 NMS 含む)のテストと実装
+  - [x] 5.1 DetectAsync(Mat)のパイプライン統合(クラス単位 NMS 含む)のテストと実装
         _Requirements: 1.1, 1.5, 1.6, 2.4, 2.5, 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7_
         _Boundary: ObjectDetector_
         _Depends: 3.1, 4.1_

@@ -27,9 +27,14 @@ internal static class ObjectOutputParser
     /// </summary>
     /// <param name="output">推論出力(実形状が確定済みであること)。</param>
     /// <param name="confidenceThreshold">この値未満の候補は除外する(合成後の信頼度で比較)。</param>
-    /// <returns>候補列(整列・クラス単位 NMS は未適用。すべて信頼度 ≥ threshold)。</returns>
+    /// <returns>
+    /// 候補列(整列・クラス単位 NMS は未適用。すべて信頼度 ≥ threshold)と、判別した出力仕様。
+    /// クラス数 C(<see cref="ObjectOutputSpec.ClassCount"/>)は呼び出し側のクラス名解決に用いる(design §6)。
+    /// </returns>
     /// <exception cref="NotSupportedException">出力形状が非対応(rank≠3・先頭次元≠1・C&lt;1)。</exception>
-    public static IReadOnlyList<ObjectCandidate> Parse(Tensor<float> output, float confidenceThreshold)
+    public static (IReadOnlyList<ObjectCandidate> Candidates, ObjectOutputSpec Spec) Parse(
+        Tensor<float> output,
+        float confidenceThreshold)
     {
         ArgumentNullException.ThrowIfNull(output);
 
@@ -76,7 +81,7 @@ internal static class ObjectOutputParser
             candidates.Add(new ObjectCandidate(box, confidence, classId));
         }
 
-        return candidates;
+        return (candidates, spec);
     }
 
     // レイアウトを吸収して候補 n・特徴 f の値を返す。行優先の平坦インデックスで参照する(FaceOutputParser と同方式)。

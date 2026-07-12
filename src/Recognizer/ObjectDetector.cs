@@ -1,4 +1,7 @@
+using System.Drawing;
 using Microsoft.ML.OnnxRuntime;
+using Microsoft.ML.OnnxRuntime.Tensors;
+using OpenCvSharp;
 using Recognizer.Internal;
 
 namespace Recognizer;
@@ -54,6 +57,150 @@ public sealed class ObjectDetector : IDisposable
 
         _session = session;
         _classNames = classNames;
+    }
+
+    /// <summary>
+    /// 物体を検出し、信頼度降順・クラス単位 NMS 適用済みの結果を返す。検出 0 件は空リスト(例外にしない。要件 4.4)。
+    /// </summary>
+    /// <param name="image">BGR の入力画像。所有権は移動しない。</param>
+    /// <param name="confidenceThreshold">この値未満の候補を除外する(0.0〜1.0)。</param>
+    /// <param name="nmsThreshold">NMS の IoU 閾値(0.0〜1.0)。</param>
+    /// <param name="cancellationToken">キャンセルトークン。</param>
+    /// <exception cref="ObjectDisposedException">破棄済みインスタンス(要件 5.5)。</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="image"/> が null(要件 1.6)。</exception>
+    /// <exception cref="ArgumentException">空の Mat、または閾値が範囲外(要件 1.5, 4.7)。</exception>
+    public Task<IReadOnlyList<ObjectDetection>> DetectAsync(
+        Mat image,
+        float confidenceThreshold = 0.5f,
+        float nmsThreshold = 0.5f,
+        CancellationToken cancellationToken = default)
+    {
+        // 引数ガードは同期的に検査し、呼び出し時点で送出する(design §6。Task へ回さない)。
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ImageDecoder.EnsureValid(image);
+        EnsureThresholdInRange(confidenceThreshold, nameof(confidenceThreshold));
+        EnsureThresholdInRange(nmsThreshold, nameof(nmsThreshold));
+
+        // CPU 束縛のパイプラインをスレッドプールへ退避する(design §6 実装方針)。
+        return Task.Run(
+            () => RunPipeline(image, confidenceThreshold, nmsThreshold, cancellationToken),
+            cancellationToken);
+    }
+
+    // 前処理 → 推論 → パース → クラス単位 NMS → 逆変換・クリップ → クラス名解決 の編成(design §4)。
+    private IReadOnlyList<ObjectDetection> RunPipeline(
+        Mat image,
+        float confidenceThreshold,
+        float nmsThreshold,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        (DenseTensor<float> tensor, LetterboxParams letterbox) = Preprocessor.Preprocess(image, _modelSpec);
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        NamedOnnxValue[] inputs = [NamedOnnxValue.CreateFromTensor(_modelSpec.InputName, tensor)];
+
+        IReadOnlyList<ObjectCandidate> candidates;
+        int classCount;
+        using (IDisposableReadOnlyCollection<DisposableNamedOnnxValue> outputs = _session.Run(inputs))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            Tensor<float> output = outputs.First(v => v.Name == _modelSpec.OutputName).AsTensor<float>();
+
+            // Why not: 出力テンソルは outputs のネイティブメモリに紐づくため、破棄前にパースして候補へ写す。
+            // クラス数 C は動的出力(構築時保留)でも実形状から確定するため、パース結果から受け取る(design §6)。
+            (candidates, ObjectOutputSpec spec) = ObjectOutputParser.Parse(output, confidenceThreshold);
+            classCount = spec.ClassCount;
+        }
+
+        return BuildDetections(candidates, classCount, letterbox, image.Width, image.Height, nmsThreshold);
+    }
+
+    // クラス単位 NMS(要件 4.2)→ 全クラス採用候補を信頼度降順マージ(要件 4.3)→ 逆変換・クリップ・クラス名解決して結果を生成する。
+    private IReadOnlyList<ObjectDetection> BuildDetections(
+        IReadOnlyList<ObjectCandidate> candidates,
+        int classCount,
+        LetterboxParams letterbox,
+        int width,
+        int height,
+        float nmsThreshold)
+    {
+        if (candidates.Count == 0)
+        {
+            return Array.Empty<ObjectDetection>();
+        }
+
+        // クラス単位 NMS: ClassId でグルーピングし、各グループ内でのみ抑制する(要件 4.2)。
+        // 異なるクラスの検出は IoU にかかわらず互いに抑制されない(同座標でも別クラスなら共存)。
+        Dictionary<int, List<ObjectCandidate>> groups = new();
+        foreach (ObjectCandidate candidate in candidates)
+        {
+            if (!groups.TryGetValue(candidate.ClassId, out List<ObjectCandidate>? group))
+            {
+                group = new List<ObjectCandidate>();
+                groups[candidate.ClassId] = group;
+            }
+
+            group.Add(candidate);
+        }
+
+        List<ObjectCandidate> kept = new(candidates.Count);
+        foreach (List<ObjectCandidate> group in groups.Values)
+        {
+            (RectangleF Box, float Confidence)[] boxes = new (RectangleF, float)[group.Count];
+            for (int i = 0; i < group.Count; i++)
+            {
+                boxes[i] = (group[i].Box, group[i].Confidence);
+            }
+
+            foreach (int index in NonMaxSuppression.Apply(boxes, nmsThreshold))
+            {
+                kept.Add(group[index]);
+            }
+        }
+
+        // 全クラスの採用候補を信頼度降順にマージ整列する(要件 4.3。グループ順に依存させない)。
+        kept.Sort(static (a, b) => b.Confidence.CompareTo(a.Confidence));
+
+        List<ObjectDetection> detections = new(kept.Count);
+        foreach (ObjectCandidate candidate in kept)
+        {
+            // bbox を元画像系へ逆変換し画像境界へクリップする(要件 4.5)。
+            RectangleF box = LetterboxParams.ClampToBounds(letterbox.InverseTransform(candidate.Box), width, height);
+            string className = ResolveClassName(candidate.ClassId, classCount);
+            detections.Add(new ObjectDetection(candidate.ClassId, className, candidate.Confidence, box));
+        }
+
+        return detections;
+    }
+
+    // クラス名解決の 4 規則(design §6): classNames 指定 → 範囲内は参照 / 範囲外は class_{id}。
+    // 省略 → クラス数 80 は COCO 名 / それ以外は class_{id}。
+    private string ResolveClassName(int classId, int classCount)
+    {
+        if (_classNames is { } names)
+        {
+            return classId >= 0 && classId < names.Count ? names[classId] : $"class_{classId}";
+        }
+
+        if (classCount == CocoClassNames.Names.Count)
+        {
+            return CocoClassNames.Names[classId];
+        }
+
+        return $"class_{classId}";
+    }
+
+    // 要件 4.7: 閾値は 0.0〜1.0。範囲外は ArgumentException(api-spec 3.5 / design §8 に合わせ ArgumentOutOfRangeException にしない)。
+    private static void EnsureThresholdInRange(float value, string paramName)
+    {
+        if (value is < 0f or > 1f)
+        {
+            throw new ArgumentException("閾値は 0.0〜1.0 の範囲で指定してください。", paramName);
+        }
     }
 
     /// <summary>推論セッションを解放する。二重呼び出しは安全(要件 5.4)。</summary>
