@@ -218,6 +218,125 @@ def make_model(
     return path
 
 
+# ---------------------------------------------------------------------------
+# 非対応形式の判別分岐(design.md §6 規則 (a)(f))を Introspect レベルで検証するための
+# 追加 fixture。いずれも onnxruntime がロード可能な正当な ONNX だが、顔検出モデルとしては
+# 非対応の形状を持ち、ModelIntrospector が NotSupportedException を送出することを検証する。
+# ⑤ の tiny_ambiguous_3x3 のみ「両形一致 → NCHW 優先」(規則 (a))の正常系検証用。
+# ---------------------------------------------------------------------------
+
+def _consume_input_to_scalar(input_name: str, suffix: str) -> tuple[list, str]:
+    """入力を形式的に消費してスカラ 0 を得るノード列と、その出力名を返す。
+
+    最適化で入力がプルーニングされ InputMetadata から消えるのを防ぐため
+    (make_model と同じ理由・手法)。
+    """
+    zeroed = f"zeroed_{suffix}"
+    reduced = f"reduced_{suffix}"
+    n_mul = helper.make_node(
+        "Mul", [input_name, "zero_scalar"], [zeroed], name=f"mul_zero_{suffix}"
+    )
+    n_reduce = helper.make_node(
+        "ReduceSum", [zeroed], [reduced], keepdims=0, name=f"reduce_all_{suffix}"
+    )
+    return [n_mul, n_reduce], reduced
+
+
+def make_multi_output_model(filename: str) -> str:
+    """出力を 2 個持つモデル(YOLOv3 系のスコープ外境界 = 規則 (f))。"""
+    out_data = make_output_tensor(5, transposed=True)  # (1, 5, N)
+    out_shape = list(out_data.shape)
+    output_vi = helper.make_tensor_value_info("output", TensorProto.FLOAT, out_shape)
+    output2_vi = helper.make_tensor_value_info("output2", TensorProto.FLOAT, out_shape)
+
+    input_vi = helper.make_tensor_value_info(
+        "images", TensorProto.FLOAT, [1, 3, INPUT_H, INPUT_W]
+    )
+    const_out_init = numpy_helper.from_array(out_data, name="const_output")
+    const_out2_init = numpy_helper.from_array(out_data, name="const_output2")
+    zero_init = numpy_helper.from_array(np.array(0.0, dtype=np.float32), name="zero_scalar")
+
+    consume, reduced = _consume_input_to_scalar("images", "a")
+    n_add1 = helper.make_node("Add", ["const_output", reduced], ["output"], name="add1")
+    n_add2 = helper.make_node("Add", ["const_output2", reduced], ["output2"], name="add2")
+
+    graph = helper.make_graph(
+        consume + [n_add1, n_add2],
+        "dummy_multi_output",
+        [input_vi],
+        [output_vi, output2_vi],
+        initializer=[const_out_init, const_out2_init, zero_init],
+    )
+    return _finalize(graph, filename)
+
+
+def make_multi_input_model(filename: str) -> str:
+    """入力を 2 個持つモデル(規則 (a): 入力は 1 個を要求)。"""
+    out_data = make_output_tensor(5, transposed=True)
+    output_vi = helper.make_tensor_value_info(
+        "output", TensorProto.FLOAT, list(out_data.shape)
+    )
+    input_vi = helper.make_tensor_value_info(
+        "images", TensorProto.FLOAT, [1, 3, INPUT_H, INPUT_W]
+    )
+    input2_vi = helper.make_tensor_value_info(
+        "images2", TensorProto.FLOAT, [1, 3, INPUT_H, INPUT_W]
+    )
+    const_out_init = numpy_helper.from_array(out_data, name="const_output")
+    zero_init = numpy_helper.from_array(np.array(0.0, dtype=np.float32), name="zero_scalar")
+
+    consume_a, reduced_a = _consume_input_to_scalar("images", "a")
+    consume_b, reduced_b = _consume_input_to_scalar("images2", "b")
+    n_add1 = helper.make_node("Add", ["const_output", reduced_a], ["t1"], name="add1")
+    n_add2 = helper.make_node("Add", ["t1", reduced_b], ["output"], name="add2")
+
+    graph = helper.make_graph(
+        consume_a + consume_b + [n_add1, n_add2],
+        "dummy_multi_input",
+        [input_vi, input2_vi],
+        [output_vi],
+        initializer=[const_out_init, zero_init],
+    )
+    return _finalize(graph, filename)
+
+
+def make_custom_input_model(filename: str, in_shape: list, graph_name: str) -> str:
+    """入力形状のみ差し替えた単一入出力モデル(rank≠4・チャネル不明・両形一致の検証用)。
+
+    出力は正常な転置 F=5。入力形状で判別分岐を切り替える。
+    """
+    out_data = make_output_tensor(5, transposed=True)
+    output_vi = helper.make_tensor_value_info(
+        "output", TensorProto.FLOAT, list(out_data.shape)
+    )
+    input_vi = helper.make_tensor_value_info("images", TensorProto.FLOAT, in_shape)
+    const_out_init = numpy_helper.from_array(out_data, name="const_output")
+    zero_init = numpy_helper.from_array(np.array(0.0, dtype=np.float32), name="zero_scalar")
+
+    consume, reduced = _consume_input_to_scalar("images", "a")
+    n_add = helper.make_node("Add", ["const_output", reduced], ["output"], name="add1")
+
+    graph = helper.make_graph(
+        consume + [n_add],
+        graph_name,
+        [input_vi],
+        [output_vi],
+        initializer=[const_out_init, zero_init],
+    )
+    return _finalize(graph, filename)
+
+
+def _finalize(graph, filename: str) -> str:
+    """グラフをモデル化・検証して書き出し、絶対パスを返す(make_model と同一手順)。"""
+    model = helper.make_model(graph, opset_imports=[helper.make_operatorsetid("", OPSET)])
+    model.ir_version = IR_VERSION
+    checker.check_model(model)
+    os.makedirs(FIXTURE_DIR, exist_ok=True)
+    path = os.path.join(FIXTURE_DIR, filename)
+    onnx.save(model, path)
+    return path
+
+
 def main() -> None:
     specs = [
         # (ファイル名, layout, F, transposed, dynamic_input)
@@ -236,6 +355,25 @@ def main() -> None:
         assert size < 100 * 1024, f"{filename} が 100 KB 以上: {size} bytes"
         print(f"  生成: {filename}  ({size} bytes)  layout={layout} F={f} "
               f"transposed={transposed} dynamic={dynamic}")
+
+    # 追加 fixture(Introspect の非対応/両形一致分岐の検証用。design §6 規則 (a)(f))
+    extra = [
+        make_multi_output_model("face_multi_output.onnx"),        # ⑦ 出力 2 個 → 非対応
+        make_custom_input_model(
+            "face_rank3_input.onnx", [1, 3, INPUT_W], "dummy_rank3_input"
+        ),                                                        # ⑧ 入力 rank3 → 非対応
+        make_custom_input_model(
+            "face_channel_unknown.onnx", [1, 4, INPUT_H, INPUT_W], "dummy_channel_unknown"
+        ),                                                        # ⑨ チャネル軸不明 → 非対応
+        make_multi_input_model("face_multi_input.onnx"),          # ⑩ 入力 2 個 → 非対応
+        make_custom_input_model(
+            "face_tiny_ambiguous_3x3.onnx", [1, 3, 3, 3], "dummy_ambiguous_3x3"
+        ),                                                        # ⑪ 両形一致 → NCHW 優先(正常系)
+    ]
+    for path in extra:
+        size = os.path.getsize(path)
+        assert size < 100 * 1024, f"{os.path.basename(path)} が 100 KB 以上: {size} bytes"
+        print(f"  生成(追加): {os.path.basename(path)}  ({size} bytes)")
 
     print("全 fixture の生成と onnx.checker 検証が完了しました。")
 

@@ -22,4 +22,9 @@
     <ProjectReference Include="..\..\src\Recognizer\Recognizer.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Why: fixture ONNX を出力ディレクトリへ複製し、テストが相対パスでロードできるようにする(design §9) -->
+    <None Include="Fixtures\*.onnx" CopyToOutputDirectory="PreserveNewest" LinkBase="Fixtures" />
+  </ItemGroup>
+
 </Project>

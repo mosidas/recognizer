@@ -21,6 +21,22 @@
 - N(候補数)= 6。入力名は `images`、出力名は `output`。
 - opset 17 / IR version 10(onnxruntime 1.27.x が確実にロードできる保守的な組み合わせ)。
 
+### 追加 fixture(判別分岐の検証用)
+
+`ModelIntrospector` の非対応判別(design.md §6 規則 (a)(f))と「両形一致 → NCHW 優先」
+(規則 (a))を Introspect レベルで独立に検証するための追加ダミー。いずれも onnxruntime が
+ロード可能な正当な ONNX だが、顔検出モデルとしては非対応の入出力形状を持つ(⑪ を除く)。
+
+| # | ファイル | 入力形状 | 出力 | 検証観点(期待) |
+| - | -------- | -------- | ---- | ---------------- |
+| ⑦ | `face_multi_output.onnx` | `[1,3,640,640]` | `output` + `output2` の 2 出力 | 複数出力 → `NotSupportedException`(規則 f) |
+| ⑧ | `face_rank3_input.onnx` | `[1,3,640]`(rank3) | `[1,5,6]` | 入力 rank≠4 → `NotSupportedException`(規則 a) |
+| ⑨ | `face_channel_unknown.onnx` | `[1,4,640,640]` | `[1,5,6]` | チャネル軸(値 3)不明 → `NotSupportedException`(規則 a) |
+| ⑩ | `face_multi_input.onnx` | `images` + `images2` の 2 入力 | `[1,5,6]` | 複数入力 → `NotSupportedException`(規則 a) |
+| ⑪ | `face_tiny_ambiguous_3x3.onnx` | `[1,3,3,3]`(両形一致) | `[1,5,6]` | NCHW を優先(正常系。規則 a) |
+
+- 出力 rank≠3・先頭次元≠1・F∉{5,20} の分岐は純粋関数 `ClassifyOutput` のリテラル形状で検証する(fixture 不要)。
+
 ## 定数出力の候補(= テスト期待値の根拠)
 
 bbox は YOLO 慣習の中心形式 `(cx, cy, w, h)`、座標系はモデル入力 640x640 の

@@ -45,7 +45,7 @@
     - 設計参照: design.md §6 FaceDetector(事前条件)、§8 エラーハンドリング。契約テストは公開 API 経由で 6.2 / 6.3 が担う(design.md §9 のテスト戦略。専用テストファイルは File Structure Plan に置かない)
     - 検証コマンド: `dotnet build`
 - [ ] 4. モデル形式の自動判別
-  - [ ] 4.1 TensorLayout / DetectionModelSpec / ModelIntrospector のテストと実装
+  - [x] 4.1 TensorLayout / DetectionModelSpec / ModelIntrospector のテストと実装
         _Requirements: 2.1, 2.2, 2.3, 2.6_
         _Boundary: ModelIntrospector_
         _Depends: 1.2_
@@ -124,3 +124,6 @@
 - Letterbox API(タスク 2.2): `LetterboxParams(float Scale, float PadX, float PadY)` record。`Create(srcW, srcH, inW, inH)` / `InverseTransform(PointF|RectangleF)` / `ClampToBounds(PointF|RectangleF, width, height)`(逆変換とクリップは独立。合成順は Clamp(Inverse(x)))。中心形式→左上形式変換は FaceOutputParser の責務。
 - ImageDecoder API(タスク 3.1): `EnsureValid(Mat)`(所有権非移動)/ `DecodeFile(string)` / `DecodeBytes(ReadOnlyMemory<byte>)` — 返却 Mat は呼び出し側が破棄(using)。paramName は CallerArgumentExpression で自動捕捉。ImRead/ImDecode は失敗時に空 Mat を返す(空 Span のみ例外のため先行ガード済み)。
 - 環境: libOpenCvSharpExtern.so は GTK に動的リンクする。devcontainer の Dockerfile に `libgtk-3-0` を追記済み(コンテナ再ビルドで恒久化。現コンテナには導入済み)。
+- ModelIntrospector API(タスク 4.1): `Introspect(InferenceSession)` → `DetectionModelSpec { Layout, InputWidth, InputHeight, InputName, OutputName }`(出力形式は保持しない)。`ClassifyOutput(ReadOnlySpan<int>)` → `OutputSpec(Format: Transposed|Standard, FeatureCount, CandidateCount)` — Run 後の実形状での再判定に使う純粋関数(DenseTensor<float>.Dimensions を渡せる)。非対応は NotSupportedException。
+- ORT 実挙動: NodeMetadata.Dimensions は int[]、動的軸は -1。fixture は計 11 種(⑦〜⑪は非対応分岐の検証用)。テストの fixture パスは AppContext.BaseDirectory + "Fixtures"(csproj で出力へコピー)。
+- レビュー教訓(4.1): 異常系ガードは 1 ガード 1 テストで独立に検証する(ガード単位の退行を捕捉するため)。後続タスクも同方針で。
