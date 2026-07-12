@@ -1,4 +1,7 @@
+using System.Drawing;
 using Microsoft.ML.OnnxRuntime;
+using Microsoft.ML.OnnxRuntime.Tensors;
+using OpenCvSharp;
 using Recognizer.Internal;
 
 namespace Recognizer;
@@ -44,6 +47,122 @@ public sealed class FaceDetector : IDisposable
         }
 
         _session = session;
+    }
+
+    /// <summary>
+    /// 顔を検出し、信頼度降順の結果を返す。検出 0 件は空リスト(例外にしない。要件 3.4)。
+    /// </summary>
+    /// <param name="image">BGR の入力画像。所有権は移動しない。</param>
+    /// <param name="confidenceThreshold">この値未満の候補を除外する(0.0〜1.0)。</param>
+    /// <param name="nmsThreshold">NMS の IoU 閾値(0.0〜1.0)。</param>
+    /// <param name="cancellationToken">キャンセルトークン。</param>
+    /// <exception cref="ObjectDisposedException">破棄済みインスタンス(要件 4.5)。</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="image"/> が null(要件 1.6)。</exception>
+    /// <exception cref="ArgumentException">空の Mat、または閾値が範囲外(要件 1.5, 3.9)。</exception>
+    public Task<IReadOnlyList<FaceDetection>> DetectAsync(
+        Mat image,
+        float confidenceThreshold = 0.7f,
+        float nmsThreshold = 0.5f,
+        CancellationToken cancellationToken = default)
+    {
+        // 引数ガードは同期的に検査し、呼び出し時点で送出する(design §6。Task へ回さない)。
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ImageDecoder.EnsureValid(image);
+        EnsureThresholdInRange(confidenceThreshold, nameof(confidenceThreshold));
+        EnsureThresholdInRange(nmsThreshold, nameof(nmsThreshold));
+
+        // CPU 束縛のパイプラインをスレッドプールへ退避する(design §6 実装方針)。
+        return Task.Run(
+            () => RunPipeline(image, confidenceThreshold, nmsThreshold, cancellationToken),
+            cancellationToken);
+    }
+
+    // 前処理 → 推論 → パース → NMS → 逆変換・クリップ の編成。計算ロジック自体は内部部品に集約(design §7)。
+    private IReadOnlyList<FaceDetection> RunPipeline(
+        Mat image,
+        float confidenceThreshold,
+        float nmsThreshold,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        (DenseTensor<float> tensor, LetterboxParams letterbox) = Preprocessor.Preprocess(image, _modelSpec);
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        NamedOnnxValue[] inputs = [NamedOnnxValue.CreateFromTensor(_modelSpec.InputName, tensor)];
+
+        IReadOnlyList<FaceCandidate> candidates;
+        using (IDisposableReadOnlyCollection<DisposableNamedOnnxValue> outputs = _session.Run(inputs))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            Tensor<float> output = outputs.First(v => v.Name == _modelSpec.OutputName).AsTensor<float>();
+
+            // Why not: 出力テンソルは outputs のネイティブメモリに紐づくため、破棄前にパースして候補へ写す。
+            candidates = FaceOutputParser.Parse(output, confidenceThreshold);
+        }
+
+        return BuildDetections(candidates, letterbox, image.Width, image.Height, nmsThreshold);
+    }
+
+    // NMS 採用(信頼度降順)候補を元画像系へ逆変換・クリップして結果 record を生成する(生成箇所を終端に限定。design §7)。
+    private static IReadOnlyList<FaceDetection> BuildDetections(
+        IReadOnlyList<FaceCandidate> candidates,
+        LetterboxParams letterbox,
+        int width,
+        int height,
+        float nmsThreshold)
+    {
+        if (candidates.Count == 0)
+        {
+            return Array.Empty<FaceDetection>();
+        }
+
+        (RectangleF Box, float Confidence)[] boxes = new (RectangleF, float)[candidates.Count];
+        for (int i = 0; i < candidates.Count; i++)
+        {
+            boxes[i] = (candidates[i].Box, candidates[i].Confidence);
+        }
+
+        // NMS は採用インデックスを信頼度降順で返すため、この順序をそのまま結果に維持する(要件 3.3)。
+        IReadOnlyList<int> kept = NonMaxSuppression.Apply(boxes, nmsThreshold);
+
+        List<FaceDetection> detections = new(kept.Count);
+        foreach (int index in kept)
+        {
+            FaceCandidate candidate = candidates[index];
+
+            // BBox・ランドマークとも逆変換して画像境界へクリップする(要件 3.5 の座標系・境界前提)。
+            RectangleF box = LetterboxParams.ClampToBounds(letterbox.InverseTransform(candidate.Box), width, height);
+            FaceLandmarks? landmarks = candidate.Landmarks is { } lm
+                ? MapLandmarks(lm, letterbox, width, height)
+                : null;
+
+            detections.Add(new FaceDetection(box, candidate.Confidence, landmarks));
+        }
+
+        return detections;
+    }
+
+    private static FaceLandmarks MapLandmarks(FaceLandmarks lm, LetterboxParams letterbox, int width, int height)
+        => new(
+            MapPoint(lm.LeftEye, letterbox, width, height),
+            MapPoint(lm.RightEye, letterbox, width, height),
+            MapPoint(lm.Nose, letterbox, width, height),
+            MapPoint(lm.LeftMouth, letterbox, width, height),
+            MapPoint(lm.RightMouth, letterbox, width, height));
+
+    private static PointF MapPoint(PointF point, LetterboxParams letterbox, int width, int height)
+        => LetterboxParams.ClampToBounds(letterbox.InverseTransform(point), width, height);
+
+    // 要件 3.9: 閾値は 0.0〜1.0。範囲外は ArgumentException(api-spec 3.6 / design §8 の指定に合わせ ArgumentOutOfRangeException にしない)。
+    private static void EnsureThresholdInRange(float value, string paramName)
+    {
+        if (value is < 0f or > 1f)
+        {
+            throw new ArgumentException("閾値は 0.0〜1.0 の範囲で指定してください。", paramName);
+        }
     }
 
     /// <summary>推論セッションを解放する。二重呼び出しは安全(要件 4.4)。</summary>

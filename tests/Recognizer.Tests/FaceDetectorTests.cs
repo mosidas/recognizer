@@ -1,4 +1,6 @@
+using System.Drawing;
 using Microsoft.ML.OnnxRuntime;
+using OpenCvSharp;
 
 namespace Recognizer.Tests;
 
@@ -84,5 +86,166 @@ public sealed class FaceDetectorTests
         Exception? ex = Record.Exception(detector.Dispose);
 
         Assert.Null(ex);
+    }
+
+    // --- DetectAsync(Mat)パイプライン統合(タスク 6.2) ---
+    // fixture は入力非依存の定数出力。640x640 の Mat なら scale=1/pad=0 で座標が素通しになる。
+    private static Mat SquareImage() => new(640, 640, MatType.CV_8UC3, Scalar.All(0));
+
+    private static void AssertClose(float expected, float actual)
+        => Assert.True(Math.Abs(expected - actual) <= 0.05f, $"期待 {expected} に対し実際 {actual}");
+
+    private static void AssertBox(RectangleF expected, RectangleF actual)
+    {
+        AssertClose(expected.X, actual.X);
+        AssertClose(expected.Y, actual.Y);
+        AssertClose(expected.Width, actual.Width);
+        AssertClose(expected.Height, actual.Height);
+    }
+
+    private static void AssertPoint(PointF expected, PointF actual)
+    {
+        AssertClose(expected.X, actual.X);
+        AssertClose(expected.Y, actual.Y);
+    }
+
+    // 正常系: 既定閾値(0.7/0.5)を引数省略で使い、A→B→D の 3 件を信頼度降順で返す(要件 1.1/3.1/3.2/3.3/3.5/3.8)
+    [Fact]
+    public async Task DetectAsync_既定閾値で信頼度降順の3件を返す()
+    {
+        using FaceDetector detector = new(FixturePath("face_nchw_transposed_f5.onnx"));
+        using Mat image = SquareImage();
+
+        IReadOnlyList<FaceDetection> results = await detector.DetectAsync(image);
+
+        Assert.Equal(3, results.Count);
+        AssertClose(0.95f, results[0].Confidence);
+        AssertClose(0.85f, results[1].Confidence);
+        AssertClose(0.75f, results[2].Confidence);
+        // 左上形式(中心形式から変換済み)。A=(75,75,50,50), B=(270,270,60,60), D=(160,460,80,80)
+        AssertBox(new RectangleF(75f, 75f, 50f, 50f), results[0].BBox);
+        AssertBox(new RectangleF(270f, 270f, 60f, 60f), results[1].BBox);
+        AssertBox(new RectangleF(160f, 460f, 80f, 80f), results[2].BBox);
+    }
+
+    // 正常系: 高閾値では検出 0 件が空リストになり例外を投げない(要件 3.4)
+    [Fact]
+    public async Task DetectAsync_高閾値では空リストを返す()
+    {
+        using FaceDetector detector = new(FixturePath("face_nchw_transposed_f5.onnx"));
+        using Mat image = SquareImage();
+
+        IReadOnlyList<FaceDetection> results = await detector.DetectAsync(image, confidenceThreshold: 0.99f);
+
+        Assert.Empty(results);
+    }
+
+    // 正常系: 非正方入力で座標が元画像系へ逆変換される(要件 3.5)
+    // 1280x640(幅x高さ): scale=min(640/1280,640/640)=0.5, padX=0, padY=(640-320)/2=160。
+    [Fact]
+    public async Task DetectAsync_非正方入力で座標を元画像系へ逆変換する()
+    {
+        using FaceDetector detector = new(FixturePath("face_nchw_transposed_f5.onnx"));
+        using Mat image = new(640, 1280, MatType.CV_8UC3, Scalar.All(0));
+
+        IReadOnlyList<FaceDetection> results = await detector.DetectAsync(image);
+
+        Assert.Equal(3, results.Count);
+        // B のレターボックス左上 (270,270,60,60) → ((270-0)/0.5,(270-160)/0.5,60/0.5,60/0.5)=(540,220,120,120)、境界内。
+        AssertBox(new RectangleF(540f, 220f, 120f, 120f), results[1].BBox);
+    }
+
+    // 正常系: F=20 モデルはランドマーク 5 点を含み座標が検証できる(要件 3.6)
+    [Fact]
+    public async Task DetectAsync_F20モデルはランドマーク5点を返す()
+    {
+        using FaceDetector detector = new(FixturePath("face_nchw_transposed_f20.onnx"));
+        using Mat image = SquareImage();
+
+        IReadOnlyList<FaceDetection> results = await detector.DetectAsync(image);
+
+        FaceDetection top = results[0]; // A(cx=100,cy=100,w=50,h=50)。dx=10, up=7.5, down=10
+        Assert.NotNull(top.Landmarks);
+        FaceLandmarks lm = top.Landmarks!;
+        AssertPoint(new PointF(90f, 92.5f), lm.LeftEye);
+        AssertPoint(new PointF(110f, 92.5f), lm.RightEye);
+        AssertPoint(new PointF(100f, 100f), lm.Nose);
+        AssertPoint(new PointF(90f, 110f), lm.LeftMouth);
+        AssertPoint(new PointF(110f, 110f), lm.RightMouth);
+    }
+
+    // 正常系: F=5 モデルはランドマークが null(要件 3.7)
+    [Fact]
+    public async Task DetectAsync_F5モデルはランドマークがnull()
+    {
+        using FaceDetector detector = new(FixturePath("face_nchw_transposed_f5.onnx"));
+        using Mat image = SquareImage();
+
+        IReadOnlyList<FaceDetection> results = await detector.DetectAsync(image);
+
+        Assert.All(results, r => Assert.Null(r.Landmarks));
+    }
+
+    // 統合: レイアウト差異(標準形式・NHWC・動的軸)を吸収し同一結果を返す(要件 2.2/2.3 の統合面)
+    [Theory]
+    [InlineData("face_nchw_standard_f5.onnx")]
+    [InlineData("face_nhwc_transposed_f5.onnx")]
+    [InlineData("face_dynamic_input_f5.onnx")]
+    public async Task DetectAsync_レイアウト差異を吸収して同一結果を返す(string fixture)
+    {
+        using FaceDetector detector = new(FixturePath(fixture));
+        using Mat image = SquareImage();
+
+        IReadOnlyList<FaceDetection> results = await detector.DetectAsync(image);
+
+        Assert.Equal(3, results.Count);
+        AssertClose(0.95f, results[0].Confidence);
+        AssertBox(new RectangleF(75f, 75f, 50f, 50f), results[0].BBox);
+        AssertBox(new RectangleF(270f, 270f, 60f, 60f), results[1].BBox);
+        AssertBox(new RectangleF(160f, 460f, 80f, 80f), results[2].BBox);
+    }
+
+    // 異常系: 空の Mat は ArgumentException を同期送出する(要件 1.5)
+    // Task を破棄(_ =)しても throw が起きることで「呼び出し時点の同期送出」を保証する。
+    [Fact]
+    public void DetectAsync_空のMatはArgumentException()
+    {
+        using FaceDetector detector = new(FixturePath("face_nchw_transposed_f5.onnx"));
+        using Mat empty = new();
+
+        _ = Assert.Throws<ArgumentException>(() =>
+        {
+            _ = detector.DetectAsync(empty);
+        });
+    }
+
+    // 異常系: confidenceThreshold が範囲外なら ArgumentException を同期送出する(要件 3.9、1 ガード 1 テスト)
+    [Theory]
+    [InlineData(-0.1f)]
+    [InlineData(1.1f)]
+    public void DetectAsync_confidenceThreshold範囲外はArgumentException(float threshold)
+    {
+        using FaceDetector detector = new(FixturePath("face_nchw_transposed_f5.onnx"));
+        using Mat image = SquareImage();
+
+        _ = Assert.Throws<ArgumentException>(() =>
+        {
+            _ = detector.DetectAsync(image, confidenceThreshold: threshold);
+        });
+    }
+
+    // 異常系: nmsThreshold が範囲外なら ArgumentException を同期送出する(要件 3.9、1 ガード 1 テスト)
+    [Theory]
+    [InlineData(-0.1f)]
+    [InlineData(1.1f)]
+    public void DetectAsync_nmsThreshold範囲外はArgumentException(float threshold)
+    {
+        using FaceDetector detector = new(FixturePath("face_nchw_transposed_f5.onnx"));
+        using Mat image = SquareImage();
+
+        _ = Assert.Throws<ArgumentException>(() =>
+        {
+            _ = detector.DetectAsync(image, nmsThreshold: threshold);
+        });
     }
 }

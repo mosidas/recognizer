@@ -77,7 +77,7 @@
     - 対象ファイル: `src/Recognizer/FaceDetector.cs`(新規), `tests/Recognizer.Tests/FaceDetectorTests.cs`(新規)
     - 設計参照: design.md §6 FaceDetector(コンストラクタ契約)、§8(null / FileNotFound / ORT 透過 / NotSupported の各分岐を個別テスト)
     - 検証コマンド: `dotnet test --filter "FullyQualifiedName~FaceDetectorTests"`
-  - [ ] 6.2 DetectAsync(Mat)のパイプライン統合と FaceDetection のテストと実装
+  - [x] 6.2 DetectAsync(Mat)のパイプライン統合と FaceDetection のテストと実装
         _Requirements: 1.1, 1.5, 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 3.8, 3.9_
         _Boundary: FaceDetector_
         _Depends: 2.1, 2.2, 5.1, 5.2, 6.1_
