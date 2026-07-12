@@ -84,7 +84,7 @@
     - 対象ファイル: `src/Recognizer/FaceDetector.cs`(変更), `src/Recognizer/FaceDetection.cs`(新規), `tests/Recognizer.Tests/FaceDetectorTests.cs`(変更)
     - 設計参照: design.md §4 システムフロー、§6 FaceDetector(DetectAsync 契約)。fixture ①②③④で閾値フィルタ・NMS・降順・空リスト・座標復元・ランドマーク有無・既定値、空 Mat / 閾値範囲外の異常系を個別テスト
     - 検証コマンド: `dotnet test --filter "FullyQualifiedName~FaceDetectorTests"`
-  - [ ] 6.3 パス / バイト列オーバーロードのテストと実装
+  - [x] 6.3 パス / バイト列オーバーロードのテストと実装
         _Requirements: 1.2, 1.3, 1.4, 1.6_
         _Boundary: FaceDetector_
         _Depends: 3.1, 6.2_

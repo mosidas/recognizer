@@ -248,4 +248,162 @@ public sealed class FaceDetectorTests
             _ = detector.DetectAsync(image, nmsThreshold: threshold);
         });
     }
+
+    // --- DetectAsync パス / バイト列オーバーロード(タスク 6.3) ---
+    // fixture は入力非依存の定数出力。PNG を経由しても 640x640 なら Mat 版と同一結果になる。
+    private static void AssertSameDetections(
+        IReadOnlyList<FaceDetection> expected,
+        IReadOnlyList<FaceDetection> actual)
+    {
+        Assert.Equal(expected.Count, actual.Count);
+        for (int i = 0; i < expected.Count; i++)
+        {
+            AssertClose(expected[i].Confidence, actual[i].Confidence);
+            AssertBox(expected[i].BBox, actual[i].BBox);
+        }
+    }
+
+    // 正常系: パス版が Mat 版と同一結果(件数・座標・信頼度)を返す(要件 1.2)
+    [Fact]
+    public async Task DetectAsync_パス版がMat版と同一結果を返す()
+    {
+        using FaceDetector detector = new(FixturePath("face_nchw_transposed_f5.onnx"));
+        using Mat image = SquareImage();
+        IReadOnlyList<FaceDetection> expected = await detector.DetectAsync(image);
+
+        string tempPath = Path.Combine(Path.GetTempPath(), $"face_{Guid.NewGuid():N}.png");
+        Cv2.ImWrite(tempPath, image);
+        try
+        {
+            IReadOnlyList<FaceDetection> actual = await detector.DetectAsync(tempPath);
+
+            AssertSameDetections(expected, actual);
+        }
+        finally
+        {
+            File.Delete(tempPath);
+        }
+    }
+
+    // 正常系: バイト列版が Mat 版と同一結果を返す(要件 1.3)
+    [Fact]
+    public async Task DetectAsync_バイト列版がMat版と同一結果を返す()
+    {
+        using FaceDetector detector = new(FixturePath("face_nchw_transposed_f5.onnx"));
+        using Mat image = SquareImage();
+        IReadOnlyList<FaceDetection> expected = await detector.DetectAsync(image);
+
+        Cv2.ImEncode(".png", image, out byte[] encoded);
+        ReadOnlyMemory<byte> bytes = encoded;
+
+        IReadOnlyList<FaceDetection> actual = await detector.DetectAsync(bytes);
+
+        AssertSameDetections(expected, actual);
+    }
+
+    // 異常系: 存在しないパスは ArgumentException を同期送出する(要件 1.4、1 ガード 1 テスト)
+    [Fact]
+    public void DetectAsync_存在しないパスはArgumentException()
+    {
+        using FaceDetector detector = new(FixturePath("face_nchw_transposed_f5.onnx"));
+        string missing = Path.Combine(Path.GetTempPath(), $"missing_{Guid.NewGuid():N}.png");
+
+        _ = Assert.Throws<ArgumentException>(() =>
+        {
+            _ = detector.DetectAsync(missing);
+        });
+    }
+
+    // 異常系: 画像でないファイルは ArgumentException を同期送出する(要件 1.4、1 ガード 1 テスト)
+    [Fact]
+    public void DetectAsync_画像でないファイルはArgumentException()
+    {
+        using FaceDetector detector = new(FixturePath("face_nchw_transposed_f5.onnx"));
+        string tempPath = Path.Combine(Path.GetTempPath(), $"notimage_{Guid.NewGuid():N}.txt");
+        File.WriteAllText(tempPath, "これは画像ではありません");
+        try
+        {
+            _ = Assert.Throws<ArgumentException>(() =>
+            {
+                _ = detector.DetectAsync(tempPath);
+            });
+        }
+        finally
+        {
+            File.Delete(tempPath);
+        }
+    }
+
+    // 異常系: 画像としてデコードできない不正バイト列は ArgumentException を同期送出する(要件 1.4、1 ガード 1 テスト)
+    [Fact]
+    public void DetectAsync_不正バイト列はArgumentException()
+    {
+        using FaceDetector detector = new(FixturePath("face_nchw_transposed_f5.onnx"));
+        ReadOnlyMemory<byte> garbage = new byte[] { 0x00, 0x01, 0x02, 0x03, 0x04 };
+
+        _ = Assert.Throws<ArgumentException>(() =>
+        {
+            _ = detector.DetectAsync(garbage);
+        });
+    }
+
+    // 異常系: 空バイト列は ArgumentException を同期送出する(要件 1.4、1 ガード 1 テスト)
+    [Fact]
+    public void DetectAsync_空バイト列はArgumentException()
+    {
+        using FaceDetector detector = new(FixturePath("face_nchw_transposed_f5.onnx"));
+
+        _ = Assert.Throws<ArgumentException>(() =>
+        {
+            _ = detector.DetectAsync(ReadOnlyMemory<byte>.Empty);
+        });
+    }
+
+    // 異常系: null の imagePath は ArgumentNullException を同期送出する(要件 1.6)
+    [Fact]
+    public void DetectAsync_nullパスはArgumentNullException()
+    {
+        using FaceDetector detector = new(FixturePath("face_nchw_transposed_f5.onnx"));
+
+        _ = Assert.Throws<ArgumentNullException>(() =>
+        {
+            _ = detector.DetectAsync((string)null!);
+        });
+    }
+
+    // 異常系: パス版でも閾値範囲外は ArgumentException を同期送出する(要件 3.9、オーバーロードへのガード波及)
+    [Fact]
+    public void DetectAsync_パス版の閾値範囲外はArgumentException()
+    {
+        using FaceDetector detector = new(FixturePath("face_nchw_transposed_f5.onnx"));
+        using Mat image = SquareImage();
+        string tempPath = Path.Combine(Path.GetTempPath(), $"face_{Guid.NewGuid():N}.png");
+        Cv2.ImWrite(tempPath, image);
+        try
+        {
+            _ = Assert.Throws<ArgumentException>(() =>
+            {
+                _ = detector.DetectAsync(tempPath, confidenceThreshold: 1.1f);
+            });
+        }
+        finally
+        {
+            File.Delete(tempPath);
+        }
+    }
+
+    // 異常系: バイト列版でも閾値範囲外は ArgumentException を同期送出する(要件 3.9、オーバーロードへのガード波及)
+    [Fact]
+    public void DetectAsync_バイト列版の閾値範囲外はArgumentException()
+    {
+        using FaceDetector detector = new(FixturePath("face_nchw_transposed_f5.onnx"));
+        using Mat image = SquareImage();
+        Cv2.ImEncode(".png", image, out byte[] encoded);
+        ReadOnlyMemory<byte> bytes = encoded;
+
+        _ = Assert.Throws<ArgumentException>(() =>
+        {
+            _ = detector.DetectAsync(bytes, nmsThreshold: 1.1f);
+        });
+    }
 }
