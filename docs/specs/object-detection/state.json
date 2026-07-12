@@ -1,7 +1,7 @@
 {
   "workflow": "sdd",
   "unit": "object-detection",
-  "state": "requirements-approved",
+  "state": "design-generated",
   "approvals": {
     "requirements": true,
     "design": false,
