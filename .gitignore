@@ -1,0 +1,27 @@
+# --- env ---
+.env
+.envrc
+
+# --- .NET ---
+bin/
+obj/
+*.user
+.vs/
+TestResults/
+artifacts/
+
+# --- ONNX モデル（別途ダウンロード） ---
+models/*.onnx
+
+# --- Logs ---
+*.log
+
+# --- OS / Editor (global) ---
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini

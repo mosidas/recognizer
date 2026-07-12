@@ -1,0 +1,93 @@
+# EditorConfig is awesome: https://EditorConfig.org
+# 共通ベース（raven development-standard / config-template/common を基に拡張）
+# 言語非依存の汎用ベース。言語固有の indent ルールはプロジェクトに応じて追記する。
+
+# top-most EditorConfig file
+root = true
+
+# All files
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 2
+
+# JSON files (JSONC / JSON5 含む: devcontainer.json, tsconfig.json など)
+[*.{json,jsonc,json5}]
+indent_style = space
+indent_size = 2
+
+# YAML files
+[*.{yml,yaml}]
+indent_style = space
+indent_size = 2
+
+# TOML files (pyproject.toml, ruff.toml など)
+[*.toml]
+indent_style = space
+indent_size = 2
+
+# Markdown files
+[*.md]
+trim_trailing_whitespace = false
+max_line_length = off
+
+# Package.json
+[package.json]
+indent_style = space
+indent_size = 2
+
+# Configuration files
+[*.{config.js,config.ts,config.mjs}]
+indent_style = space
+indent_size = 2
+
+# Docker files
+[Dockerfile*]
+indent_style = space
+indent_size = 2
+
+[*.{dockerfile,Dockerfile}]
+indent_style = space
+indent_size = 2
+
+# Shell scripts
+[*.{sh,bash}]
+indent_style = space
+indent_size = 2
+
+# CSS/SCSS files
+[*.{css,scss,sass,less}]
+indent_style = space
+indent_size = 2
+
+# HTML files
+[*.{html,htm}]
+indent_style = space
+indent_size = 2
+
+# XML files
+[*.{xml,svg}]
+indent_style = space
+indent_size = 2
+
+# Environment files
+[*.env*]
+indent_style = space
+indent_size = 2
+
+# Git files
+[.gitignore]
+indent_style = space
+indent_size = 2
+
+# Make files (require tabs)
+[{Makefile,makefile,*.mk}]
+indent_style = tab
+
+# SQL files
+[*.sql]
+indent_style = space
+indent_size = 2

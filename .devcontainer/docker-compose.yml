@@ -1,0 +1,15 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    # OpenCvSharp の公式ネイティブランタイムが linux-arm64 非対応のため、
+    # Apple Silicon ホストでも x64 (Rosetta エミュレーション) で動かす
+    platform: linux/amd64
+    volumes:
+      - ../:/workspace:cached
+      - claude-config:/home/vscode/.claude
+    command: sleep infinity
+
+volumes:
+  claude-config:
