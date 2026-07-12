@@ -61,7 +61,7 @@
     - 対象ファイル: `src/Recognizer/Internal/Preprocessor.cs`(新規)
     - 設計参照: design.md §6 Preprocessor / Letterbox。契約検証は fixture パイプライン経由で 6.2 が担う(design.md §9)
     - 検証コマンド: `dotnet build`
-  - [ ]* 5.2 (P) FaceOutputParser(形式吸収・閾値フィルタ・ランドマーク読み出し)と FaceLandmarks の実装
+  - [x]* 5.2 (P) FaceOutputParser(形式吸収・閾値フィルタ・ランドマーク読み出し)と FaceLandmarks の実装
         _Requirements: 2.3, 3.1, 3.6, 3.7_
         _Boundary: FaceOutputParser_
         _Depends: 4.1_
@@ -127,3 +127,5 @@
 - ModelIntrospector API(タスク 4.1): `Introspect(InferenceSession)` → `DetectionModelSpec { Layout, InputWidth, InputHeight, InputName, OutputName }`(出力形式は保持しない)。`ClassifyOutput(ReadOnlySpan<int>)` → `OutputSpec(Format: Transposed|Standard, FeatureCount, CandidateCount)` — Run 後の実形状での再判定に使う純粋関数(DenseTensor<float>.Dimensions を渡せる)。非対応は NotSupportedException。
 - ORT 実挙動: NodeMetadata.Dimensions は int[]、動的軸は -1。fixture は計 11 種(⑦〜⑪は非対応分岐の検証用)。テストの fixture パスは AppContext.BaseDirectory + "Fixtures"(csproj で出力へコピー)。
 - レビュー教訓(4.1): 異常系ガードは 1 ガード 1 テストで独立に検証する(ガード単位の退行を捕捉するため)。後続タスクも同方針で。
+- Preprocessor API(5.1): `Preprocess(Mat, DetectionModelSpec)` → `(DenseTensor<float> Tensor, LetterboxParams Params)`。RGB 順・[0,1] 正規化。null/空の再検査はしない(上流 ImageDecoder が担保)。
+- FaceOutputParser API(5.2): `Parse(Tensor<float> output, float confidenceThreshold)` → `IReadOnlyList<FaceCandidate(Box, Confidence, Landmarks?)>`。出力はレターボックス空間・左上形式・閾値フィルタ済み。NMS・逆変換・クリップ・降順整列・FaceDetection 生成は 6.2 の責務。
