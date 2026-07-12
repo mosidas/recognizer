@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.7.0" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <!-- Why: dotnet test でのテスト検出・実行に必要な VSTest アダプタ(ライブラリ依存ではないため 要件 5.4 の対象外) -->
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Recognizer\Recognizer.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Why: fixture ONNX を出力ディレクトリへ複製し、テストが相対パスでロードできるようにする(design §9) -->
+    <None Include="Fixtures\*.onnx" CopyToOutputDirectory="PreserveNewest" LinkBase="Fixtures" />
+  </ItemGroup>
+
+</Project>
