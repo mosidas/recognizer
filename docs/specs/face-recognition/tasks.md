@@ -80,7 +80,7 @@
     - 対象ファイル: `src/Recognizer/FaceRecognizer.cs`(変更), `tests/Recognizer.Tests/FaceRecognizerTests.cs`(変更)
     - 設計参照: design.md §6 FaceRecognizer(オーバーロードは `ImageDecoder` で Mat 化して Mat 版へ委譲・所有 Mat 破棄)、§8(null/空/デコード不可)
     - 検証コマンド: `dotnet test --filter "FullyQualifiedName~FaceRecognizerTests"`(path/bytes と Mat の結果一致 / 不正パス・デコード不可・空 Mat → ArgumentException / null Mat(両画像分)・null imagePath → ArgumentNullException)
-  - [ ] 5.6 キャンセル・並行呼び出しの公開契約テスト
+  - [x] 5.6 キャンセル・並行呼び出しの公開契約テスト
         _Requirements: 6.1, 6.2, 6.3_
         _Boundary: FaceRecognizer_
         _Depends: 5.5_

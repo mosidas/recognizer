@@ -825,4 +825,123 @@ public sealed class FaceRecognizerTests
             _ = recognizer.CompareFacesAsync(image1, empty);
         });
     }
+
+    // --- 非同期契約: CancellationToken・キャンセル・並行(タスク 5.6) ---
+    // design §10: 埋め込みセッションは並行 Run 安全でロックなし。内包 FaceDetector のキャンセル・並行契約は unit 1 で検証済みのため、
+    // ここでは FaceRecognizer 公開 API(ExtractEmbeddingAsync / CompareFacesAsync)の契約(要件 6.1〜6.3)を検証する。
+
+    // 正常系(要件 6.1): 明示的な CancellationToken を渡した ExtractEmbeddingAsync が正常完了する。
+    // 「省略可で受け取る」は既存の省略呼び出し群で担保済み。ここは明示指定経路が通ることを確認する。
+    [Fact]
+    public async Task ExtractEmbeddingAsync_明示的なCancellationTokenを受け取り完了する()
+    {
+        using FaceRecognizer recognizer = ExtractRecognizer();
+        using Mat image = WhiteSquare();
+        using CancellationTokenSource cts = new();
+
+        FaceEmbeddingResult result = await recognizer.ExtractEmbeddingAsync(image, cancellationToken: cts.Token);
+
+        Assert.NotNull(result.Embedding);
+    }
+
+    // 正常系(要件 6.1): 明示的な CancellationToken を渡した CompareFacesAsync が正常完了する。
+    [Fact]
+    public async Task CompareFacesAsync_明示的なCancellationTokenを受け取り完了する()
+    {
+        using FaceRecognizer recognizer = ExtractRecognizer();
+        using Mat image1 = BrightSquare(200);
+        using Mat image2 = BrightSquare(190);
+        using CancellationTokenSource cts = new();
+
+        FaceComparisonResult result = await recognizer.CompareFacesAsync(image1, image2, cancellationToken: cts.Token);
+
+        Assert.Equal(FaceComparisonStatus.Success, result.Status);
+    }
+
+    // 異常系(要件 6.2): 事前にキャンセル済みのトークンで ExtractEmbeddingAsync が OperationCanceledException(派生 TaskCanceledException 含む)を送出する。
+    // ThrowsAnyAsync は派生も捕捉するため、キャンセルが内包 FaceDetector・Task.Run・チェックポイントのどこで送出されても契約を満たすことを確認できる。
+    [Fact]
+    public async Task ExtractEmbeddingAsync_キャンセル済みトークンで中断する()
+    {
+        using FaceRecognizer recognizer = ExtractRecognizer();
+        using Mat image = WhiteSquare();
+        using CancellationTokenSource cts = new();
+        cts.Cancel();
+
+        _ = await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => recognizer.ExtractEmbeddingAsync(image, cancellationToken: cts.Token));
+    }
+
+    // 異常系(要件 6.2): 事前にキャンセル済みのトークンで CompareFacesAsync が OperationCanceledException(派生含む)を送出する。
+    [Fact]
+    public async Task CompareFacesAsync_キャンセル済みトークンで中断する()
+    {
+        using FaceRecognizer recognizer = ExtractRecognizer();
+        using Mat image1 = BrightSquare(200);
+        using Mat image2 = BrightSquare(190);
+        using CancellationTokenSource cts = new();
+        cts.Cancel();
+
+        _ = await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => recognizer.CompareFacesAsync(image1, image2, cancellationToken: cts.Token));
+    }
+
+    // 正常系(要件 6.3): 同一インスタンスへの ExtractEmbeddingAsync 並行呼び出しが単独実行と同一の埋め込みを返す。
+    // fixture は入力依存の決定論的出力のため結果は決定的。8 並行 × 4 回で埋め込みセッションの並行 Run 安全性を確認する。
+    [Fact]
+    public async Task ExtractEmbeddingAsync_並行呼び出しが単独実行と同一結果を返す()
+    {
+        using FaceRecognizer recognizer = ExtractRecognizer();
+        using Mat image = WhiteSquare();
+        FaceEmbeddingResult expected = await recognizer.ExtractEmbeddingAsync(image);
+        Assert.NotNull(expected.Embedding);
+
+        const int parallelism = 8;
+        const int rounds = 4;
+        for (int round = 0; round < rounds; round++)
+        {
+            Task<FaceEmbeddingResult>[] tasks = new Task<FaceEmbeddingResult>[parallelism];
+            for (int i = 0; i < parallelism; i++)
+            {
+                tasks[i] = recognizer.ExtractEmbeddingAsync(image);
+            }
+
+            FaceEmbeddingResult[] all = await Task.WhenAll(tasks);
+
+            foreach (FaceEmbeddingResult actual in all)
+            {
+                Assert.NotNull(actual.Embedding);
+                Assert.Equal(expected.Embedding!, actual.Embedding!);
+            }
+        }
+    }
+
+    // 正常系(要件 6.3): 同一インスタンスへの CompareFacesAsync 並行呼び出しが単独実行と同一の Status/Similarity を返す。
+    [Fact]
+    public async Task CompareFacesAsync_並行呼び出しが単独実行と同一結果を返す()
+    {
+        using FaceRecognizer recognizer = ExtractRecognizer();
+        using Mat image1 = BrightSquare(200);
+        using Mat image2 = BrightSquare(190);
+        FaceComparisonResult expected = await recognizer.CompareFacesAsync(image1, image2);
+
+        const int parallelism = 8;
+        const int rounds = 4;
+        for (int round = 0; round < rounds; round++)
+        {
+            Task<FaceComparisonResult>[] tasks = new Task<FaceComparisonResult>[parallelism];
+            for (int i = 0; i < parallelism; i++)
+            {
+                tasks[i] = recognizer.CompareFacesAsync(image1, image2);
+            }
+
+            FaceComparisonResult[] all = await Task.WhenAll(tasks);
+
+            foreach (FaceComparisonResult actual in all)
+            {
+                Assert.Equal(expected.Status, actual.Status);
+                Assert.Equal(expected.Similarity, actual.Similarity, Epsilon);
+            }
+        }
+    }
 }
