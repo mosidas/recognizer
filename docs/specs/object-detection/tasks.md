@@ -6,7 +6,7 @@
 ## タスク一覧
 
 - [ ] 1. テスト fixture の増設
-  - [ ] 1.1 物体検出用 fixture 4 種(⑫〜⑮)の生成と README 追記
+  - [x] 1.1 物体検出用 fixture 4 種(⑫〜⑮)の生成と README 追記
         _Requirements: 2.3, 2.4, 2.5, 2.8, 3.2, 4.2_
         _Boundary: TestFixtures_
     - 対象ファイル: `tools/generate_test_models.py`(変更。builder 追加), `tests/Recognizer.Tests/Fixtures/object_*.onnx`(新規 4 種), `tests/Recognizer.Tests/Fixtures/README.md`(変更)
@@ -91,3 +91,4 @@
 - 再利用資産の internal API 一覧は research.md §1(ImageDecoder / Preprocessor / Letterbox / NonMaxSuppression / DetectionModelSpec)。FaceDetector のソースは変更禁止(非回帰)。
 - 既存 fixture の期待値正本は `tests/Recognizer.Tests/Fixtures/README.md`。物体用 fixture の定数・期待値も同 README に追記して正本とする。
 - レビュー教訓(unit 1): 異常系ガードは 1 ガード 1 テスト。非同期の同期送出検証は非 async の Assert.Throws で。
+- 物体 fixture(1.1)の期待値(正本は Fixtures/README.md): ⑫ P0(class0,0.90)→P2(class1,0.85,P0と同座標・別クラスで両残)→P3(class2,0.70) の 3 件。P1 は P0 と IoU≈0.68 で同クラス抑制、P4(0.30)は閾値除外。⑬ Q0(0.9×0.8=0.72,class0)→Q1(0.8×0.75=0.60,class1)、Q2(0.42)除外。⑭ person(0.95)→car(0.88)→cat(0.75)(ClassId 0/2/15)。⑮ F=4 で NotSupported。float32 丸めのため許容誤差比較を推奨。
