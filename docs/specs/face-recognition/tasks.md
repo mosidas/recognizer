@@ -52,20 +52,20 @@
     - 対象ファイル: `src/Recognizer/FaceRecognizer.cs`(新規・static メソッドのみ), `tests/Recognizer.Tests/FaceRecognizerTests.cs`(新規)
     - 設計参照: design.md §6 FaceRecognizer(`CompareEmbeddings` 契約)、§7(ゼロベクトル → 0・Math.Clamp)
     - 検証コマンド: `dotnet test --filter "FullyQualifiedName~FaceRecognizerTests.CompareEmbeddings"`(同一=1・逆向き=-1・直交=0・次元不一致 → ArgumentException・ゼロベクトル → 0・クランプ、epsilon=1e-5)
-  - [ ] 5.2 コンストラクタ(2 モデル判別・ガード・部分構築防止・Dispose)のテストと実装
-        _Requirements: 2.4, 2.5, 2.7, 6.4, 6.5_
+  - [x] 5.2 コンストラクタ(2 モデル判別・ガード・部分構築防止・Dispose)のテストと実装
+        _Requirements: 2.4, 2.5, 2.7, 6.4_
         _Boundary: FaceRecognizer_
         _Depends: 5.1, 2.1_
     - 対象ファイル: `src/Recognizer/FaceRecognizer.cs`(変更), `tests/Recognizer.Tests/FaceRecognizerTests.cs`(変更)
     - 設計参照: design.md §6 FaceRecognizer(コンストラクタ事前/事後条件・部分構築時の内包 detector 破棄)、§8(モデル不存在/ロード失敗/判別不能/null パス/Dispose 後)
-    - 検証コマンド: `dotnet test --filter "FullyQualifiedName~FaceRecognizerTests"`(null パス → ArgumentNullException・不存在 → FileNotFoundException・判別不能 → NotSupportedException・Dispose 後の各メソッド → ObjectDisposedException)。要件 2.5(ロード失敗 → ORT 例外透過)は決定論的な破損 onnx fixture を要し再現が困難なため、実装は「包まず透過」に留め自動テスト対象外(防御的実装)とする — この扱いを完了条件とする
+    - 検証コマンド: `dotnet test --filter "FullyQualifiedName~FaceRecognizerTests"`(null パス → ArgumentNullException・不存在 → FileNotFoundException・判別不能 → NotSupportedException・有効 fixture で構築成功・Dispose の冪等性)。破棄ガード `ThrowIfDisposed` 機構を実装するが、要件 6.5(Dispose 後の非同期メソッド → ObjectDisposedException)の検証は非同期メソッドが実装される 5.3 で行う。要件 2.5(ロード失敗 → ORT 例外透過)は決定論的な破損 onnx fixture を要し再現が困難なため、実装は「包まず透過」に留め自動テスト対象外(防御的実装)とする — この扱いを完了条件とする
   - [ ] 5.3 ExtractEmbeddingAsync(Mat)パイプラインと分岐のテストと実装
-        _Requirements: 3.1, 3.2, 3.3, 3.5, 3.6, 3.8, 3.9_
+        _Requirements: 3.1, 3.2, 3.3, 3.5, 3.6, 3.8, 3.9, 6.5_
         _Boundary: FaceRecognizer_
         _Depends: 5.2, 3.1, 3.2, 4.1, 1.1_
     - 対象ファイル: `src/Recognizer/FaceRecognizer.cs`(変更), `tests/Recognizer.Tests/FaceRecognizerTests.cs`(変更)
     - 設計参照: design.md §4 システムフロー(単画像版)、§6 FaceRecognizer(同期ガード → 検出 → 切り出し → 前処理 → Run)、§8(未検出 → `(null, null)`)
-    - 検証コマンド: `dotnet test --filter "FullyQualifiedName~FaceRecognizerTests"`(faceRegion 省略で検出・最高信頼度使用・Face 設定 / faceRegion 指定で検出スキップ・Face=null / 未検出 → Embedding・Face とも null(㉑ 黒画像) / Embedding 長 = 次元数(⑰) / 既定 0.7・0.5 / 閾値範囲外 → ArgumentException(faceRegion 指定時も) / faceRegion 空・非交差 → ArgumentException)
+    - 検証コマンド: `dotnet test --filter "FullyQualifiedName~FaceRecognizerTests"`(faceRegion 省略で検出・最高信頼度使用・Face 設定 / faceRegion 指定で検出スキップ・Face=null / 未検出 → Embedding・Face とも null(㉑ 黒画像) / Embedding 長 = 次元数(⑰) / 既定 0.7・0.5 / 閾値範囲外 → ArgumentException(faceRegion 指定時も) / faceRegion 空・非交差 → ArgumentException / Dispose 後の ExtractEmbeddingAsync → ObjectDisposedException(要件 6.5))
   - [ ] 5.4 CompareFacesAsync(Mat)パイプラインと Status 3 分岐のテストと実装
         _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7_
         _Boundary: FaceRecognizer_
@@ -105,3 +105,5 @@
 - (1.1)㉑ `face_inputconf_f5` は conf=入力全体の ReduceMean(前処理 /255 後)。letterbox パディング(114)が混じらないよう、C# テストは **640×640 の正方単色画像**を使う(白=conf 1.0 検出 / 黒=0.0 未検出)。出力 `[1,5,6]`(N=6>F=5 で転置 `[1,5,N]` 判別)。
 - (2.1)埋め込みモデルの入出力名は検出系と同じく `images` / `output`(`input` ではない)。後続の FaceRecognizer で入出力名を参照する際に留意。
 - (2.1)分岐網羅のため rank1 出力 fixture ㉔ `embed_nchw_rank1_d4.onnx`(出力 rank1 `[4]`)を追加。`IntrospectEmbedding` は rank1 `[D]`/rank2 `[1,D]` 双方を受理(design (e-b))。既定サイズは `IntrospectInput` の引数化で検出=640・埋め込み=112 に分岐(既存検出挙動は不変)。
+- (5.x 共通)`PublicApiTests.ExportedTypes_...` は公開型が 9 型に増えたためタスク 6.1(期待集合を 9 型へ更新)まで**赤のまま**。5.2〜5.6 の各タスクの検証は `FaceRecognizerTests` フィルタで行い、ソリューション全体 green は 6.1 で担保する。
+- (5.2)検出側の null/存在/判別/ORT 透過は内包 `new FaceDetector(...)` に一元化(重複検査しない)。埋め込み側のみ `File.Exists → new InferenceSession → IntrospectEmbedding` の順で明示検査。部分構築失敗時は内包 detector と埋め込み session を破棄して透過。`ThrowIfDisposed` は先行実装済み(5.3 の同期部で最初に呼ぶ)。
