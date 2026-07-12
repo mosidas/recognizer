@@ -9,12 +9,12 @@
   - [x] 1.1 fixture ⑰〜㉓ の生成スクリプト追加・生成・コミットと README 追記
         _Requirements: 2.2, 2.3, 2.6, 3.5, 4.3, 4.4_
         _Boundary: TestFixtures_
-    - 対象ファイル: `tools/generate_test_models.py`(変更・builder 追加), `tests/Recognizer.Tests/Fixtures/embed_nchw_meanrgb_d4.onnx` / `embed_nhwc_meanrgb_d4.onnx` / `embed_dynamic_input_d4.onnx` / `embed_unsupported_rank3.onnx` / `embed_unsupported_rank2_batch2.onnx` / `embed_unsupported_dynamic_dim.onnx` / `face_inputconf_f5.onnx`(生成物 7 種・新規), `tests/Recognizer.Tests/Fixtures/README.md`(変更・⑰〜㉓ 追記)
-    - 設計参照: design.md §9 テスト戦略(fixture ⑰〜㉑ の入出力構成・入力依存/決定論の根拠)、design.md §6 ModelIntrospector (e-d)(非対応分岐の網羅。㉒=出力 `[2,4]`(rank2 先頭次元 ≠ 1)・㉓=出力 `[1,D]` の D 動的軸 は (e-d) の 4 分岐を fixture で行使するため §9 の集合を補うもの)、research.md §4(前処理の一次情報・生成方針)
+    - 対象ファイル: `tools/generate_test_models.py`(変更・builder 追加), `tests/Recognizer.Tests/Fixtures/embed_nchw_meanrgb_d4.onnx` / `embed_nhwc_meanrgb_d4.onnx` / `embed_dynamic_input_d4.onnx` / `embed_unsupported_rank3.onnx` / `embed_unsupported_rank2_batch2.onnx` / `embed_unsupported_dynamic_dim.onnx` / `face_inputconf_f5.onnx`(生成物 7 種・新規。rank1 出力 `embed_nchw_rank1_d4.onnx`=㉔ は分岐網羅のためタスク 2.1 で追加), `tests/Recognizer.Tests/Fixtures/README.md`(変更・⑰〜㉔ 追記)
+    - 設計参照: design.md §9 テスト戦略(fixture ⑰〜㉔ の入出力構成・入力依存/決定論の根拠)、design.md §6 ModelIntrospector (e-b)(e-d)(rank1 `[D]`/rank2 `[1,D]` の受理と非対応分岐の網羅。㉒=出力 `[2,4]`(rank2 先頭次元 ≠ 1)・㉓=出力 `[1,D]` の D 動的軸・㉔=rank1 `[4]` は §9 の集合を補うもの)、research.md §4(前処理の一次情報・生成方針)
     - 検証コマンド: `python3 -m venv /tmp/onnx-venv && /tmp/onnx-venv/bin/pip install onnx && /tmp/onnx-venv/bin/python tools/generate_test_models.py` の後、7 ファイルの存在と各サイズが 100 KB 未満であること・既存 16 fixture のバイト列が不変であること(`git diff --stat`)
 
 - [ ] 2. 埋め込みモデルの形式自動判別(契約先行)
-  - [ ] 2.1 EmbeddingModelSpec と ModelIntrospector.IntrospectEmbedding のテストと実装(既定サイズ引数化を含む)
+  - [x] 2.1 EmbeddingModelSpec と ModelIntrospector.IntrospectEmbedding のテストと実装(既定サイズ引数化を含む)
         _Requirements: 2.1, 2.2, 2.3, 2.6_
         _Boundary: ModelIntrospector_
         _Depends: 1.1_
@@ -103,3 +103,5 @@
 - (1.1)埋め込み fixture の出力チャネル順は `[mean(R),mean(G),mean(B),1.0]`。fixture は入力チャネルをそのまま ReduceMean するため、**EmbeddingPreprocessor が BGR→RGB 変換して RGB 順で詰めること**を後続の C# テストで担保する必要がある(単色 (r,g,b) 入力 → 正規化 `(x−127.5)/128` の解析値と照合)。
 - (1.1)㉓(D 動的)は入力を動的軸 `[1,3,'h','w']` にしないと ORT が Shape→Slice を定数畳み込みして D が静的化してしまう。判別上は 112 既定に落ちるため後続テストは無害。
 - (1.1)㉑ `face_inputconf_f5` は conf=入力全体の ReduceMean(前処理 /255 後)。letterbox パディング(114)が混じらないよう、C# テストは **640×640 の正方単色画像**を使う(白=conf 1.0 検出 / 黒=0.0 未検出)。出力 `[1,5,6]`(N=6>F=5 で転置 `[1,5,N]` 判別)。
+- (2.1)埋め込みモデルの入出力名は検出系と同じく `images` / `output`(`input` ではない)。後続の FaceRecognizer で入出力名を参照する際に留意。
+- (2.1)分岐網羅のため rank1 出力 fixture ㉔ `embed_nchw_rank1_d4.onnx`(出力 rank1 `[4]`)を追加。`IntrospectEmbedding` は rank1 `[D]`/rank2 `[1,D]` 双方を受理(design (e-b))。既定サイズは `IntrospectInput` の引数化で検出=640・埋め込み=112 に分岐(既存検出挙動は不変)。

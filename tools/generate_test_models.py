@@ -569,6 +569,38 @@ def make_embedding_model(
     return _finalize(graph, filename)
 
 
+def make_embedding_rank1_model(filename: str, graph_name: str = "dummy_embed_rank1") -> str:
+    """rank1 出力の埋め込みダミー(㉔)。出力 [4](バッチ次元なし)= [mean(R),mean(G),mean(B),1.0]。
+
+    design §6 (e-b) の rank1 [D] 次元確定分岐を fixture で網羅するための最小モデル。値は ⑰ と同一の
+    決定論則で、単色 (r,g,b) 画像なら [(r−127.5)/128, (g−127.5)/128, (b−127.5)/128, 1.0]。
+    NCHW 入力 [1,3,112,112] を batch/空間軸 [0,2,3] で平均して [3] に落とし、定数 [1] と axis=0 で
+    連結して rank1 [4] を得る(⑰ は空間軸のみ平均で [1,3]→concat で [1,4] だった点が相違)。
+    """
+    input_vi = helper.make_tensor_value_info(
+        "images", TensorProto.FLOAT, [1, 3, EMBED_H, EMBED_W]
+    )
+    output_vi = helper.make_tensor_value_info("output", TensorProto.FLOAT, [EMBED_DIM])
+
+    # rank1 [1] の定数 1.0。ch_mean [3] と axis=0 で連結し rank1 [4] にする。
+    one_const = numpy_helper.from_array(np.array([1.0], dtype=np.float32), name="one_const")
+    # batch+空間軸で平均 → [3](チャネル平均・batch=1 なので値は空間平均と一致)。
+    n_mean = helper.make_node(
+        "ReduceMean", ["images"], ["ch_mean"], axes=[0, 2, 3], keepdims=0, name="ch_mean"
+    )
+    n_concat = helper.make_node(
+        "Concat", ["ch_mean", "one_const"], ["output"], axis=0, name="concat_one"
+    )
+    graph = helper.make_graph(
+        [n_mean, n_concat],
+        graph_name,
+        [input_vi],
+        [output_vi],
+        initializer=[one_const],
+    )
+    return _finalize(graph, filename)
+
+
 def make_embedding_unsupported_const(
     filename: str, out_data: np.ndarray, graph_name: str
 ) -> str:
@@ -763,6 +795,12 @@ def main() -> None:
         assert size < 100 * 1024, f"{filename} が 100 KB 以上: {size} bytes"
         print(f"  生成(埋め込み): {filename}  ({size} bytes)  layout={layout} "
               f"D={EMBED_DIM} dynamic={dynamic}")
+
+    # ㉔ rank1 出力 [4]。design §6 (e-b) の rank1 次元確定分岐の網羅用。
+    rank1_path = make_embedding_rank1_model("embed_nchw_rank1_d4.onnx")
+    rank1_size = os.path.getsize(rank1_path)
+    assert rank1_size < 100 * 1024, f"embed_nchw_rank1_d4.onnx が 100 KB 以上: {rank1_size} bytes"
+    print(f"  生成(埋め込み rank1): embed_nchw_rank1_d4.onnx  ({rank1_size} bytes)  出力 [4]")
 
     embed_unsupported = [
         # ⑳ 出力 [1,4,4](rank3)

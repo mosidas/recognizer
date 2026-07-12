@@ -388,4 +388,106 @@ public sealed class ModelIntrospectorTests
         Assert.Equal(3, objectSpec.ClassCount);
         Assert.False(objectSpec.HasObjectness);
     }
+
+    // --- 埋め込み用: IntrospectEmbedding(規則 e-a〜e-d。要件 2.1, 2.2, 2.3, 2.6)---
+
+    // 規則 (e-a)(e-b)(e-c): NCHW・静的 112 入力・出力 [1,4] の次元 4・入出力名を取得する(要件 2.1, 2.3)
+    [Fact]
+    public void IntrospectEmbedding_NCHW入力112と次元4を取得する_規則eabc()
+    {
+        using InferenceSession session = OpenFixture("embed_nchw_meanrgb_d4.onnx");
+
+        EmbeddingModelSpec spec = ModelIntrospector.IntrospectEmbedding(session);
+
+        Assert.Equal(TensorLayout.Nchw, spec.Layout);
+        Assert.Equal(112, spec.InputWidth);
+        Assert.Equal(112, spec.InputHeight);
+        Assert.Equal("images", spec.InputName);
+        Assert.Equal("output", spec.OutputName);
+        Assert.Equal(4, spec.Dimension);
+    }
+
+    // 規則 (e-a)(e-b): NHWC 入力・出力 [1,4] の次元 4(要件 2.1, 2.3)
+    [Fact]
+    public void IntrospectEmbedding_NHWC入力と次元4を判別する_規則ab()
+    {
+        using InferenceSession session = OpenFixture("embed_nhwc_meanrgb_d4.onnx");
+
+        EmbeddingModelSpec spec = ModelIntrospector.IntrospectEmbedding(session);
+
+        Assert.Equal(TensorLayout.Nhwc, spec.Layout);
+        Assert.Equal(112, spec.InputWidth);
+        Assert.Equal(112, spec.InputHeight);
+        Assert.Equal(4, spec.Dimension);
+    }
+
+    // 規則 (e-a): 入力 H/W が動的軸なら 112 既定を用いる(要件 2.2)
+    [Fact]
+    public void IntrospectEmbedding_動的軸入力は112既定を用いる_規則ea()
+    {
+        using InferenceSession session = OpenFixture("embed_dynamic_input_d4.onnx");
+
+        EmbeddingModelSpec spec = ModelIntrospector.IntrospectEmbedding(session);
+
+        Assert.Equal(112, spec.InputWidth);
+        Assert.Equal(112, spec.InputHeight);
+        Assert.Equal(4, spec.Dimension);
+    }
+
+    // 規則 (e-d): 出力 rank 3 以上は非対応(要件 2.6)
+    [Fact]
+    public void IntrospectEmbedding_出力rank3以上は非対応_規則ed()
+    {
+        using InferenceSession session = OpenFixture("embed_unsupported_rank3.onnx");
+
+        _ = Assert.Throws<NotSupportedException>(() => ModelIntrospector.IntrospectEmbedding(session));
+    }
+
+    // 規則 (e-d): 出力 rank 2 で先頭次元 ≠ 1 は非対応(要件 2.6)
+    [Fact]
+    public void IntrospectEmbedding_出力rank2先頭次元1以外は非対応_規則ed()
+    {
+        using InferenceSession session = OpenFixture("embed_unsupported_rank2_batch2.onnx");
+
+        _ = Assert.Throws<NotSupportedException>(() => ModelIntrospector.IntrospectEmbedding(session));
+    }
+
+    // 規則 (e-d): 埋め込み次元 D が動的軸(≤0)は非対応(要件 2.6)
+    [Fact]
+    public void IntrospectEmbedding_次元Dが動的は非対応_規則ed()
+    {
+        using InferenceSession session = OpenFixture("embed_unsupported_dynamic_dim.onnx");
+
+        _ = Assert.Throws<NotSupportedException>(() => ModelIntrospector.IntrospectEmbedding(session));
+    }
+
+    // 規則 (e-d): 出力が複数はスコープ外で非対応(要件 2.6)
+    [Fact]
+    public void IntrospectEmbedding_複数出力は非対応_規則ed()
+    {
+        using InferenceSession session = OpenFixture("face_multi_output.onnx");
+
+        _ = Assert.Throws<NotSupportedException>(() => ModelIntrospector.IntrospectEmbedding(session));
+    }
+
+    // 規則 (e-b): 出力 rank1 [D] から次元 D=4 を確定する(要件 2.3。㉔)
+    [Fact]
+    public void IntrospectEmbedding_rank1出力から次元4を確定する_規則eb()
+    {
+        using InferenceSession session = OpenFixture("embed_nchw_rank1_d4.onnx");
+
+        EmbeddingModelSpec spec = ModelIntrospector.IntrospectEmbedding(session);
+
+        Assert.Equal(TensorLayout.Nchw, spec.Layout);
+        Assert.Equal(4, spec.Dimension);
+    }
+
+    // 規則 (e-a): チャネル軸(値 3)を特定できない入力は非対応(要件 2.6)
+    [Fact]
+    public void IntrospectEmbedding_チャネル軸不明は非対応_規則ea()
+    {
+        using InferenceSession session = OpenFixture("face_channel_unknown.onnx");
+
+        _ = Assert.Throws<NotSupportedException>(() => ModelIntrospector.IntrospectEmbedding(session));
+    }
 }

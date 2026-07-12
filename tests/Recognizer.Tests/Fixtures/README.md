@@ -169,6 +169,7 @@ opset 17 / IR 10。
 | ㉑ | `face_inputconf_f5.onnx` | NCHW | `[1,3,640,640]` | `[1,5,6]` 転置 | 入力平均 = conf。白画像→検出/黒画像→未検出。NoFaceInImage1/2・抽出未検出(要件 3.5,4.3,4.4) |
 | ㉒ | `embed_unsupported_rank2_batch2.onnx` | NCHW | `[1,3,112,112]` | `[2,4]`(rank2・先頭≠1) | rank2 で先頭次元≠1 → `NotSupportedException`(規則 e-d、要件 2.6) |
 | ㉓ | `embed_unsupported_dynamic_dim.onnx` | NCHW(動的) | `[1,3,H,W]` | 宣言 `[1,'dim']` / 実 `[1,4]` | 出力次元 D が動的(≤0)→ `NotSupportedException`(規則 e-d、要件 2.6) |
+| ㉔ | `embed_nchw_rank1_d4.onnx` | NCHW | `[1,3,112,112]` | `[4]`(rank1) | rank1 `[D]` から次元 D=4 を確定(規則 e-b の rank1 分岐、要件 2.3) |
 
 - **⑰⑱⑲ の埋め込み値**: 出力 `[1,4]` = `[mean(R), mean(G), mean(B), 1.0]`。入力は前処理
   (BGR→RGB・`(x−127.5)/128`)済みなので、単色 `(r,g,b)` 画像の埋め込みは
@@ -181,8 +182,10 @@ opset 17 / IR 10。
 - **⑳㉒㉓** は規則 (e-d) の非対応 4 分岐(複数出力=既存 `face_multi_output`・rank3 以上=⑳・
   rank2 先頭次元≠1=㉒・D 動的=㉓)を fixture で個別に行使するための集合。㉓ の D 動的軸は入力 H/W を
   動的にして Slice の ends に流し込むことで生成する(定数畳み込みで静的化するのを防ぐ。物体 ⑯ と同手法)。
-- rank1 `[D]`・rank2 `[1,D]` の正常判別など純粋関数で足りる分岐は fixture 不要。生成物は onnx.checker
-  検証済み・各 100 KB 未満(実測 ⑰⑱ 249 / ⑲ 259 / ⑳ 368 / ㉑ 447 / ㉒ 337 / ㉓ 419 bytes)。
+- **㉔ の rank1 埋め込み値**: 出力 `[4]`(バッチ次元なし)= `[mean(R), mean(G), mean(B), 1.0]`。⑰ と同一の
+  決定論則で、規則 (e-b) の rank1 `[D]` 次元確定分岐を fixture で網羅する(⑰⑱⑲ は rank2 `[1,4]` のみのため)。
+- 生成物は onnx.checker 検証済み・各 100 KB 未満(実測 ⑰⑱ 249 / ⑲ 259 / ⑳ 368 / ㉑ 447 / ㉒ 337 /
+  ㉓ 419 / ㉔ 246 bytes)。
 
 ## 再生成手順
 

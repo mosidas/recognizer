@@ -48,8 +48,9 @@ internal static class ModelIntrospector
     // チャネル(RGB/BGR)軸の値。
     private const int ChannelCount = 3;
 
-    // 動的軸が確定していないときに用いる既定の入力サイズ。
-    private const int DefaultInputSize = 640;
+    // 動的軸が確定していないときに用いる既定の入力サイズ(検出は 640、埋め込みは 112)。
+    private const int DefaultDetectionInputSize = 640;
+    private const int DefaultEmbeddingInputSize = 112;
 
     // 物体検出の特徴数の基底。転置(YOLOv8/v11)は bbox(4)+C、標準(YOLOv5)は bbox(4)+objectness(1)+C。
     private const int ObjectFeatureBaseTransposed = 4;
@@ -65,7 +66,7 @@ internal static class ModelIntrospector
         ArgumentNullException.ThrowIfNull(session);
 
         // 規則 (a)〜(c): 入力レイアウト・サイズ・入力名を判別(顔/物体で共通)。
-        (TensorLayout layout, int inputWidth, int inputHeight, string inputName) = IntrospectInput(session);
+        (TensorLayout layout, int inputWidth, int inputHeight, string inputName) = IntrospectInput(session, DefaultDetectionInputSize);
 
         // 規則 (f): 出力は 1 個を要求(複数出力の YOLOv3 系はスコープ外)。
         IReadOnlyDictionary<string, NodeMetadata> outputMetadata = session.OutputMetadata;
@@ -140,7 +141,7 @@ internal static class ModelIntrospector
         ArgumentNullException.ThrowIfNull(session);
 
         // 規則 (a)〜(c): 入力レイアウト・サイズ・入力名を判別(顔/物体で共通)。
-        (TensorLayout layout, int inputWidth, int inputHeight, string inputName) = IntrospectInput(session);
+        (TensorLayout layout, int inputWidth, int inputHeight, string inputName) = IntrospectInput(session, DefaultDetectionInputSize);
 
         // 規則 (o-f): 出力は 1 個を要求(複数出力の YOLOv3 系はスコープ外)。
         IReadOnlyDictionary<string, NodeMetadata> outputMetadata = session.OutputMetadata;
@@ -220,11 +221,65 @@ internal static class ModelIntrospector
     }
 
     /// <summary>
+    /// 埋め込みモデルのメタデータから入力仕様・出力名・埋め込み次元 D を判別する(要件 2.1, 2.2, 2.3, 2.6)。
+    /// 入力判別 (e-a) は検出/物体と共通部を再利用し、既定サイズは 112(design §6 (e-a))。
+    /// 出力は rank 1 [D] または rank 2 [1, D](D は静的正値)を要求する(規則 (e-b))。
+    /// 次元は API 契約(要件 3.6)の要のため構築時に確定させ、動的 D は非対応とする(規則 (e-d))。
+    /// </summary>
+    /// <exception cref="NotSupportedException">
+    /// 入力判別不能・複数出力・出力 rank 3 以上・rank 2 で先頭次元 ≠ 1・D が動的(≤ 0)。
+    /// </exception>
+    public static EmbeddingModelSpec IntrospectEmbedding(InferenceSession session)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+
+        // 規則 (e-a): 入力レイアウト・サイズ・入力名を判別(既定サイズは埋め込みの 112)。
+        (TensorLayout layout, int inputWidth, int inputHeight, string inputName) = IntrospectInput(session, DefaultEmbeddingInputSize);
+
+        // 規則 (e-d): 出力は 1 個を要求(複数出力はスコープ外)。
+        IReadOnlyDictionary<string, NodeMetadata> outputMetadata = session.OutputMetadata;
+        if (outputMetadata.Count != 1)
+        {
+            throw new NotSupportedException($"出力テンソルは 1 個を要求しますが {outputMetadata.Count} 個でした(複数出力モデルは非対応)。");
+        }
+
+        (string? outputName, NodeMetadata? outputMeta) = Single(outputMetadata);
+        if (!outputMeta.IsTensor)
+        {
+            throw new NotSupportedException("出力がテンソルではありません。");
+        }
+
+        // 規則 (e-b): rank 1 [D] または rank 2 [1, D] の末尾を次元 D とする。
+        int[] outputDims = outputMeta.Dimensions;
+        int dimension;
+        if (outputDims.Length == 1)
+        {
+            dimension = outputDims[0];
+        }
+        else if (outputDims.Length == 2 && outputDims[0] == 1)
+        {
+            dimension = outputDims[1];
+        }
+        else
+        {
+            throw new NotSupportedException($"埋め込み出力は [D] または [1, D] を要求しますが形状 [{string.Join(",", outputDims)}] でした。");
+        }
+
+        // 規則 (e-d): D が動的軸(≤ 0)なら構築時に次元を確定できず非対応。
+        if (dimension <= 0)
+        {
+            throw new NotSupportedException($"埋め込み次元 D を確定できません(形状 [{string.Join(",", outputDims)}] の D が動的軸です)。");
+        }
+
+        return new EmbeddingModelSpec(layout, inputWidth, inputHeight, inputName, outputName, dimension);
+    }
+
+    /// <summary>
     /// 入力メタデータから規則 (a)〜(c) でレイアウト・サイズ・入力名を判別する共通部。
     /// <see cref="Introspect"/> / <see cref="IntrospectObject"/> の双方から呼ぶ(挙動は従来の Introspect と同一)。
     /// </summary>
     /// <exception cref="NotSupportedException">入力が 1 個でない・非テンソル・rank ≠ 4・チャネル軸不明。</exception>
-    private static (TensorLayout Layout, int InputWidth, int InputHeight, string InputName) IntrospectInput(InferenceSession session)
+    private static (TensorLayout Layout, int InputWidth, int InputHeight, string InputName) IntrospectInput(InferenceSession session, int defaultInputSize)
     {
         // 規則 (a): 入力はテンソル 1 個・rank 4 を要求する。
         IReadOnlyDictionary<string, NodeMetadata> inputMetadata = session.InputMetadata;
@@ -266,9 +321,9 @@ internal static class ModelIntrospector
             throw new NotSupportedException("入力テンソルのチャネル軸(値 3)を特定できませんでした。");
         }
 
-        // 規則 (b)(c): 静的軸はその値、動的軸(≤ 0)は 640 を既定にする。
-        int inputHeight = height > 0 ? height : DefaultInputSize;
-        int inputWidth = width > 0 ? width : DefaultInputSize;
+        // 規則 (b)(c): 静的軸はその値、動的軸(≤ 0)は既定サイズ(検出 640 / 埋め込み 112)にする。
+        int inputHeight = height > 0 ? height : defaultInputSize;
+        int inputWidth = width > 0 ? width : defaultInputSize;
 
         return (layout, inputWidth, inputHeight, inputName);
     }

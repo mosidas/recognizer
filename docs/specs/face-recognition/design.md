@@ -198,6 +198,7 @@ sequenceDiagram
 
 - **fixture の増設**(research.md §4。生成スクリプト + 生成物コミット方式、既存 16 種のバイト列不変):
   - ⑰ `embed_nchw_meanrgb_d4`: 入力 [1,3,112,112]・出力 `[1,4]` = [mean(R), mean(G), mean(B), 1.0]。**入力依存・決定論的**。単色画像 (r,g,b) の埋め込みは正規化後 `[(r−127.5)/128, (g−127.5)/128, (b−127.5)/128, 1.0]` で解析的に計算できる。
+  - ㉔ `embed_nchw_rank1_d4`: ⑰ と同一の決定論値を **rank1 `[4]`**(バッチ次元なし)で出力。規則 (e-b) の rank1 `[D]` 次元確定分岐の検証用。
   - ⑱ `embed_nhwc_meanrgb_d4`: NHWC 版(EmbeddingPreprocessor の詰め順検証)。
   - ⑲ `embed_dynamic_input_d4`: 入力 H/W 動的 → 112 既定の検証。
   - ⑳ `embed_unsupported_rank3`: 出力 `[1,4,4]` → NotSupportedException(規則 e-d)。
