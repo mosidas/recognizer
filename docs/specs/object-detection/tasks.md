@@ -30,7 +30,7 @@
     - 対象ファイル: `src/Recognizer/Internal/ObjectOutputParser.cs`(新規。internal 候補 struct `ObjectCandidate` を同居)
     - 設計参照: design.md §6 ObjectOutputParser。契約検証は fixture パイプライン経由で 5.1 が担う(design.md §9)
     - 検証コマンド: `dotnet build`
-  - [ ]* 3.2 (P) CocoClassNames(Ultralytics 標準 80 クラス名)の実装
+  - [x]* 3.2 (P) CocoClassNames(Ultralytics 標準 80 クラス名)の実装
         _Requirements: 3.2_
         _Boundary: CocoClassNames_
     - 対象ファイル: `src/Recognizer/Internal/CocoClassNames.cs`(新規)
