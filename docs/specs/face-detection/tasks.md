@@ -37,7 +37,7 @@
     - 検証コマンド: `dotnet test --filter "FullyQualifiedName~LetterboxTests"`
 
 - [ ] 3. 画像入力
-  - [ ]* 3.1 (P) ImageDecoder(パス/バイト列 → Mat 解決と入力ガード)の実装
+  - [x]* 3.1 (P) ImageDecoder(パス/バイト列 → Mat 解決と入力ガード)の実装
         _Requirements: 1.2, 1.3, 1.4, 1.5, 1.6_
         _Boundary: ImageDecoder_
         _Depends: 1.1_
@@ -122,3 +122,5 @@
 - fixture の再生成はバイト一致で再現する(/tmp/onnx-venv の python で tools/generate_test_models.py 実行)。
 - NMS API(タスク 2.1): `NonMaxSuppression.Apply(IReadOnlyList<(RectangleF Box, float Confidence)>, float nmsThreshold)` → 採用候補の元配列インデックスを信頼度降順で返す。抑制は IoU > 閾値(等値は残す)。`IntersectionOverUnion(RectangleF, RectangleF)` も公開(internal)。
 - Letterbox API(タスク 2.2): `LetterboxParams(float Scale, float PadX, float PadY)` record。`Create(srcW, srcH, inW, inH)` / `InverseTransform(PointF|RectangleF)` / `ClampToBounds(PointF|RectangleF, width, height)`(逆変換とクリップは独立。合成順は Clamp(Inverse(x)))。中心形式→左上形式変換は FaceOutputParser の責務。
+- ImageDecoder API(タスク 3.1): `EnsureValid(Mat)`(所有権非移動)/ `DecodeFile(string)` / `DecodeBytes(ReadOnlyMemory<byte>)` — 返却 Mat は呼び出し側が破棄(using)。paramName は CallerArgumentExpression で自動捕捉。ImRead/ImDecode は失敗時に空 Mat を返す(空 Span のみ例外のため先行ガード済み)。
+- 環境: libOpenCvSharpExtern.so は GTK に動的リンクする。devcontainer の Dockerfile に `libgtk-3-0` を追記済み(コンテナ再ビルドで恒久化。現コンテナには導入済み)。

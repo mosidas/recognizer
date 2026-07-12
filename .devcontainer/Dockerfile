@@ -21,6 +21,7 @@ RUN set -eux; \
 RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
     && apt-get install -y --no-install-recommends \
        ffmpeg \
+       libgtk-3-0 \
        libtbb12 \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
