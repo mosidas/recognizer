@@ -1,3 +1,5 @@
+using System.Drawing;
+using OpenCvSharp;
 using Recognizer;
 
 namespace Recognizer.Tests;
@@ -210,5 +212,183 @@ public sealed class FaceRecognizerTests
         Exception? ex = Record.Exception(recognizer.Dispose);
 
         Assert.Null(ex);
+    }
+
+    // --- ExtractEmbeddingAsync(Mat)パイプラインと分岐(タスク 5.3) ---
+    // 検出 fixture ㉑(入力平均 = conf。640x640 白→検出/黒→未検出)と埋め込み fixture ⑰(出力 = [mean(R),mean(G),mean(B),1.0])を用いる。
+    private const string InputConfDetectorFixture = "face_inputconf_f5.onnx";
+
+    // 埋め込み分岐テスト用の recognizer。検出は入力依存 fixture ㉑、埋め込みは次元 4 の fixture ⑰。
+    private static FaceRecognizer ExtractRecognizer()
+        => new(FixturePath(InputConfDetectorFixture), FixturePath(ValidEmbeddingFixture));
+
+    // 単色 BGR 画像。Scalar は (B, G, R) 順。
+    private static Mat SolidBgr(int width, int height, byte b, byte g, byte r)
+        => new(height, width, MatType.CV_8UC3, new Scalar(b, g, r));
+
+    // ㉑ は入力全体の平均を conf に使うため 640x640 の白/黒で検出あり/未検出を作り分ける。
+    private static Mat WhiteSquare() => new(640, 640, MatType.CV_8UC3, Scalar.All(255));
+    private static Mat BlackSquare() => new(640, 640, MatType.CV_8UC3, Scalar.All(0));
+
+    // (x − 127.5) / 128 の期待値(design §6)。
+    private static float Normalize(byte value) => (value - 127.5f) / 128f;
+
+    // 正常系: faceRegion 省略・白画像(検出あり)→ Embedding 長 = 4・Face 非 null(要件 3.1, 3.2, 3.6)
+    [Fact]
+    public async Task ExtractEmbeddingAsync_faceRegion省略_検出ありで埋め込みとFaceを返す()
+    {
+        using FaceRecognizer recognizer = ExtractRecognizer();
+        using Mat image = WhiteSquare();
+
+        FaceEmbeddingResult result = await recognizer.ExtractEmbeddingAsync(image);
+
+        Assert.NotNull(result.Embedding);
+        Assert.Equal(4, result.Embedding!.Length);
+        Assert.NotNull(result.Face);
+    }
+
+    // 正常系: faceRegion 指定(有効矩形)→ 検出せず Face=null・Embedding 長 = 4(要件 3.3, 3.6)
+    [Fact]
+    public async Task ExtractEmbeddingAsync_faceRegion指定_検出せずFaceはnull()
+    {
+        using FaceRecognizer recognizer = ExtractRecognizer();
+        using Mat image = SolidBgr(200, 200, b: 64, g: 128, r: 192);
+
+        FaceEmbeddingResult result = await recognizer.ExtractEmbeddingAsync(
+            image, faceRegion: new RectangleF(50, 50, 100, 100));
+
+        Assert.NotNull(result.Embedding);
+        Assert.Equal(4, result.Embedding!.Length);
+        Assert.Null(result.Face);
+    }
+
+    // 統合検証: 単色画像の埋め込みが (x−127.5)/128 の解析値(RGB 順・出力 = [mean(R),mean(G),mean(B),1.0])になる
+    [Fact]
+    public async Task ExtractEmbeddingAsync_単色画像で埋め込みが解析値になる()
+    {
+        using FaceRecognizer recognizer = ExtractRecognizer();
+        // BGR (B=64, G=128, R=192)。単色のため切り出し・リサイズ後も画素値は不変。
+        using Mat image = SolidBgr(200, 200, b: 64, g: 128, r: 192);
+
+        FaceEmbeddingResult result = await recognizer.ExtractEmbeddingAsync(
+            image, faceRegion: new RectangleF(50, 50, 100, 100));
+
+        Assert.NotNull(result.Embedding);
+        float[] embedding = result.Embedding!;
+        Assert.Equal(Normalize(192), embedding[0], 4); // mean(R)
+        Assert.Equal(Normalize(128), embedding[1], 4); // mean(G)
+        Assert.Equal(Normalize(64), embedding[2], 4);  // mean(B)
+        Assert.Equal(1f, embedding[3], 4);             // ⑰ の定数チャネル
+    }
+
+    // 異常系: faceRegion 省略・黒画像(未検出)→ Embedding・Face とも null・例外なし(要件 3.5)
+    [Fact]
+    public async Task ExtractEmbeddingAsync_faceRegion省略_未検出でnull結果を返す()
+    {
+        using FaceRecognizer recognizer = ExtractRecognizer();
+        using Mat image = BlackSquare();
+
+        FaceEmbeddingResult result = await recognizer.ExtractEmbeddingAsync(image);
+
+        Assert.Null(result.Embedding);
+        Assert.Null(result.Face);
+    }
+
+    // 要件 3.8: 既定閾値 0.7 / 0.5 が使われる(省略呼び出しが成立し、白画像は既定 0.7 超で検出される)
+    [Fact]
+    public async Task ExtractEmbeddingAsync_既定閾値で検出が成立する()
+    {
+        using FaceRecognizer recognizer = ExtractRecognizer();
+        using Mat image = WhiteSquare();
+
+        FaceEmbeddingResult result = await recognizer.ExtractEmbeddingAsync(image);
+
+        // 白画像 conf ≈ 1.0 は既定 detectionThreshold=0.7 を超えるため顔が採用される。
+        Assert.NotNull(result.Face);
+        Assert.InRange(result.Face!.Confidence, 0.7f, 1f);
+    }
+
+    // 異常系: detectionThreshold 範囲外 → ArgumentException(faceRegion 指定で検出省略の呼び出しでも送出。要件 3.9)
+    [Theory]
+    [InlineData(-0.1f)]
+    [InlineData(1.1f)]
+    public void ExtractEmbeddingAsync_detectionThreshold範囲外はArgumentException(float threshold)
+    {
+        using FaceRecognizer recognizer = ExtractRecognizer();
+        using Mat image = SolidBgr(200, 200, b: 64, g: 128, r: 192);
+
+        _ = Assert.Throws<ArgumentException>(() =>
+        {
+            _ = recognizer.ExtractEmbeddingAsync(
+                image, faceRegion: new RectangleF(50, 50, 100, 100), detectionThreshold: threshold);
+        });
+    }
+
+    // 異常系: nmsThreshold 範囲外 → ArgumentException(faceRegion 指定で検出省略の呼び出しでも送出。要件 3.9)
+    [Theory]
+    [InlineData(-0.1f)]
+    [InlineData(1.1f)]
+    public void ExtractEmbeddingAsync_nmsThreshold範囲外はArgumentException(float threshold)
+    {
+        using FaceRecognizer recognizer = ExtractRecognizer();
+        using Mat image = SolidBgr(200, 200, b: 64, g: 128, r: 192);
+
+        _ = Assert.Throws<ArgumentException>(() =>
+        {
+            _ = recognizer.ExtractEmbeddingAsync(
+                image, faceRegion: new RectangleF(50, 50, 100, 100), nmsThreshold: threshold);
+        });
+    }
+
+    // 異常系: faceRegion が空(幅・高さ 0)→ ArgumentException(要件 3.7 を呼び出し経路でも確認)
+    [Fact]
+    public void ExtractEmbeddingAsync_faceRegion空はArgumentException()
+    {
+        using FaceRecognizer recognizer = ExtractRecognizer();
+        using Mat image = SolidBgr(200, 200, b: 64, g: 128, r: 192);
+
+        _ = Assert.Throws<ArgumentException>(() =>
+        {
+            _ = recognizer.ExtractEmbeddingAsync(image, faceRegion: new RectangleF(50, 50, 0, 0));
+        });
+    }
+
+    // 異常系: faceRegion が画像と交差しない → ArgumentException(要件 3.7)
+    [Fact]
+    public void ExtractEmbeddingAsync_faceRegion非交差はArgumentException()
+    {
+        using FaceRecognizer recognizer = ExtractRecognizer();
+        using Mat image = SolidBgr(200, 200, b: 64, g: 128, r: 192);
+
+        _ = Assert.Throws<ArgumentException>(() =>
+        {
+            _ = recognizer.ExtractEmbeddingAsync(image, faceRegion: new RectangleF(500, 500, 50, 50));
+        });
+    }
+
+    // 異常系: null 画像 → ArgumentNullException(要件 1.6)
+    [Fact]
+    public void ExtractEmbeddingAsync_null画像はArgumentNullException()
+    {
+        using FaceRecognizer recognizer = ExtractRecognizer();
+
+        _ = Assert.Throws<ArgumentNullException>(() =>
+        {
+            _ = recognizer.ExtractEmbeddingAsync(null!);
+        });
+    }
+
+    // 破棄: Dispose 後の ExtractEmbeddingAsync 呼び出し → ObjectDisposedException(要件 6.5)
+    [Fact]
+    public void ExtractEmbeddingAsync_Dispose後はObjectDisposedException()
+    {
+        FaceRecognizer recognizer = ExtractRecognizer();
+        using Mat image = WhiteSquare();
+        recognizer.Dispose();
+
+        _ = Assert.Throws<ObjectDisposedException>(() =>
+        {
+            _ = recognizer.ExtractEmbeddingAsync(image);
+        });
     }
 }

@@ -59,7 +59,7 @@
     - 対象ファイル: `src/Recognizer/FaceRecognizer.cs`(変更), `tests/Recognizer.Tests/FaceRecognizerTests.cs`(変更)
     - 設計参照: design.md §6 FaceRecognizer(コンストラクタ事前/事後条件・部分構築時の内包 detector 破棄)、§8(モデル不存在/ロード失敗/判別不能/null パス/Dispose 後)
     - 検証コマンド: `dotnet test --filter "FullyQualifiedName~FaceRecognizerTests"`(null パス → ArgumentNullException・不存在 → FileNotFoundException・判別不能 → NotSupportedException・有効 fixture で構築成功・Dispose の冪等性)。破棄ガード `ThrowIfDisposed` 機構を実装するが、要件 6.5(Dispose 後の非同期メソッド → ObjectDisposedException)の検証は非同期メソッドが実装される 5.3 で行う。要件 2.5(ロード失敗 → ORT 例外透過)は決定論的な破損 onnx fixture を要し再現が困難なため、実装は「包まず透過」に留め自動テスト対象外(防御的実装)とする — この扱いを完了条件とする
-  - [ ] 5.3 ExtractEmbeddingAsync(Mat)パイプラインと分岐のテストと実装
+  - [x] 5.3 ExtractEmbeddingAsync(Mat)パイプラインと分岐のテストと実装
         _Requirements: 3.1, 3.2, 3.3, 3.5, 3.6, 3.8, 3.9, 6.5_
         _Boundary: FaceRecognizer_
         _Depends: 5.2, 3.1, 3.2, 4.1, 1.1_

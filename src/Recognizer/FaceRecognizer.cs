@@ -1,4 +1,7 @@
+using System.Drawing;
 using Microsoft.ML.OnnxRuntime;
+using Microsoft.ML.OnnxRuntime.Tensors;
+using OpenCvSharp;
 using Recognizer.Internal;
 
 namespace Recognizer;
@@ -6,7 +9,7 @@ namespace Recognizer;
 /// <summary>
 /// 顔認証(顔埋め込みの抽出と比較)を提供する公開 API。
 /// 顔検出は <see cref="FaceDetector"/> を内包して再利用し、埋め込みモデルの推論セッションを所有する(design §6)。
-/// 非同期メソッド(CompareFacesAsync / ExtractEmbeddingAsync)は後続タスクで追加する。
+/// CompareFacesAsync と path/bytes オーバーロードは後続タスクで追加する。
 /// </summary>
 public sealed class FaceRecognizer : IDisposable
 {
@@ -109,6 +112,115 @@ public sealed class FaceRecognizer : IDisposable
         return Math.Clamp(similarity, -1f, 1f);
     }
 
+    /// <summary>
+    /// 画像から顔埋め込みベクトルを抽出する。<paramref name="faceRegion"/> 省略時は顔検出を行い最高信頼度の顔を、
+    /// 指定時は検出せずその領域を対象に切り出す(design §4・§6)。
+    /// </summary>
+    /// <param name="image">BGR の入力画像。所有権は移動しない。</param>
+    /// <param name="faceRegion">埋め込み対象の顔領域。省略時は検出結果の最高信頼度の顔を使う。</param>
+    /// <param name="detectionThreshold">顔検出の信頼度閾値(0.0〜1.0)。faceRegion 省略時のみ検出に使用。</param>
+    /// <param name="nmsThreshold">顔検出の NMS IoU 閾値(0.0〜1.0)。faceRegion 省略時のみ検出に使用。</param>
+    /// <param name="cancellationToken">キャンセルトークン。</param>
+    /// <returns>埋め込みと使用した顔。faceRegion 省略で未検出のときは両者 null(要件 3.5)。faceRegion 指定時は Face=null(要件 3.3)。</returns>
+    /// <exception cref="ObjectDisposedException">破棄済みインスタンス(要件 6.5)。</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="image"/> が null(要件 1.6)。</exception>
+    /// <exception cref="ArgumentException">空の Mat、閾値が範囲外(要件 3.9)、または faceRegion が空・非交差(要件 3.7)。</exception>
+    public Task<FaceEmbeddingResult> ExtractEmbeddingAsync(
+        Mat image,
+        RectangleF? faceRegion = null,
+        float detectionThreshold = 0.7f,
+        float nmsThreshold = 0.5f,
+        CancellationToken cancellationToken = default)
+    {
+        // 検出結果に依存しない事前条件はすべて呼び出し時点で同期送出する(design §6。Task へ回さない)。
+        // 順序: 破棄済み → 画像 null/空 → 閾値範囲 → faceRegion 妥当性(指定時)。
+        ThrowIfDisposed();
+        ImageDecoder.EnsureValid(image);
+        EnsureThresholdInRange(detectionThreshold, nameof(detectionThreshold));
+        EnsureThresholdInRange(nmsThreshold, nameof(nmsThreshold));
+        if (faceRegion is { } region)
+        {
+            // 要件 3.9 と同様、faceRegion 指定で検出を省略する経路でも妥当性を検出前に検査する(要件 3.7)。
+            FaceCropper.Validate(region, image.Width, image.Height);
+        }
+
+        return ExtractEmbeddingCoreAsync(image, faceRegion, detectionThreshold, nmsThreshold, cancellationToken);
+    }
+
+    // 同期ガード通過後の非同期本体。検出(省略時)→ 未検出の早期返却 → Task.Run 内で切り出し・前処理・推論(design §6)。
+    private async Task<FaceEmbeddingResult> ExtractEmbeddingCoreAsync(
+        Mat image,
+        RectangleF? faceRegion,
+        float detectionThreshold,
+        float nmsThreshold,
+        CancellationToken cancellationToken)
+    {
+        RectangleF region;
+        FaceDetection? face;
+
+        if (faceRegion is { } specified)
+        {
+            // faceRegion 指定時は検出をスキップし Face=null とする(要件 3.3)。
+            region = specified;
+            face = null;
+        }
+        else
+        {
+            // faceRegion 省略時は検出し、信頼度降順の先頭(最高信頼度)を使う(要件 3.1・3.2。DetectAsync は降順契約)。
+            IReadOnlyList<FaceDetection> detections = await _detector
+                .DetectAsync(image, detectionThreshold, nmsThreshold, cancellationToken)
+                .ConfigureAwait(false);
+            if (detections.Count == 0)
+            {
+                // 未検出は例外ではなく両者 null の結果で返す(要件 3.5)。
+                return new FaceEmbeddingResult(null, null);
+            }
+
+            face = detections[0];
+            region = face.BBox;
+        }
+
+        // CPU 束縛の切り出し・前処理・推論をスレッドプールへ退避する(design §6 実装方針)。
+        float[] embedding = await Task
+            .Run(() => RunEmbedding(image, region, cancellationToken), cancellationToken)
+            .ConfigureAwait(false);
+
+        return new FaceEmbeddingResult(embedding, face);
+    }
+
+    // 切り出し → 前処理 → 埋め込み推論 → float[] 抽出。前後にキャンセルチェックポイントを置く(design §6)。
+    private float[] RunEmbedding(Mat image, RectangleF region, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // 中心保持の正方形で切り出す(要件 3.4)。返却 ROI は独立 Mat のため使用後に破棄する。
+        using Mat cropped = FaceCropper.CropSquare(image, region);
+
+        DenseTensor<float> tensor = EmbeddingPreprocessor.Preprocess(cropped, _embeddingSpec);
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        NamedOnnxValue[] inputs = [NamedOnnxValue.CreateFromTensor(_embeddingSpec.InputName, tensor)];
+
+        using IDisposableReadOnlyCollection<DisposableNamedOnnxValue> outputs = _embeddingSession.Run(inputs);
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        Tensor<float> output = outputs.First(v => v.Name == _embeddingSpec.OutputName).AsTensor<float>();
+
+        // Why not: 出力テンソルは outputs のネイティブメモリに紐づくため、破棄前に float[] へ写す(長さ = Dimension。要件 3.6)。
+        return output.ToArray();
+    }
+
+    // 要件 3.9: 閾値は 0.0〜1.0。範囲外は ArgumentException(FaceDetector と同一契約。ArgumentOutOfRangeException にしない)。
+    private static void EnsureThresholdInRange(float value, string paramName)
+    {
+        if (value is < 0f or > 1f)
+        {
+            throw new ArgumentException("閾値は 0.0〜1.0 の範囲で指定してください。", paramName);
+        }
+    }
+
     /// <summary>内包する検出器と埋め込み推論セッションを解放する。二重呼び出しは安全(要件 6.4)。</summary>
     public void Dispose()
     {
@@ -123,6 +235,5 @@ public sealed class FaceRecognizer : IDisposable
     }
 
     // 破棄済みインスタンスへの非同期メソッド呼び出しを ObjectDisposedException で弾く(要件 6.5)。
-    // Why not: 本タスクでは非同期メソッド未実装のため未使用だが、5.3 以降のガード機構として先行実装する。
     private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_disposed, this);
 }
