@@ -54,7 +54,7 @@
     - 検証コマンド: `dotnet test --filter "FullyQualifiedName~ModelIntrospectorTests"`
 
 - [ ] 5. 前処理と出力パース
-  - [ ]* 5.1 (P) Preprocessor(letterbox・BGR→RGB・正規化・NCHW/NHWC テンソル化)の実装
+  - [x]* 5.1 (P) Preprocessor(letterbox・BGR→RGB・正規化・NCHW/NHWC テンソル化)の実装
         _Requirements: 2.1, 2.2_
         _Boundary: Preprocessor_
         _Depends: 2.2, 4.1_
