@@ -107,7 +107,7 @@
     - 対象ファイル: `tests/Recognizer.Tests/FaceDetectorTests.cs`(変更。リフレクションで公開型が 3 型のみであることを検査), `src/Recognizer/Recognizer.csproj`(検査対象)
     - 設計参照: design.md §5(5.1〜5.4)
     - 検証コマンド: `dotnet test` に加え、`grep -rn "Console\." src/Recognizer/` がヒット 0 件(5.3)、`grep -c "<PackageReference" src/Recognizer/Recognizer.csproj` が design.md §2 の 4 パッケージ以下(5.4)
-  - [ ] 7.2 最終検証とドキュメント反映
+  - [x] 7.2 最終検証とドキュメント反映
         _Requirements: 5.5_
         _Boundary: Solution_
         _Depends: 7.1_
