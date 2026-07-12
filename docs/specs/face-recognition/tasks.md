@@ -38,7 +38,7 @@
     - 検証コマンド: `dotnet test --filter "FullyQualifiedName~EmbeddingPreprocessorTests"`(単色画像で正規化値・NCHW/NHWC の要素配置を照合)
 
 - [ ] 4. 公開結果型(データのみ・境界独立)
-  - [ ] 4.1 (P) FaceComparisonStatus / FaceComparisonResult / FaceEmbeddingResult の定義
+  - [x] 4.1 (P) FaceComparisonStatus / FaceComparisonResult / FaceEmbeddingResult の定義
         _Requirements: 7.1, 7.2_
         _Boundary: ResultTypes_
     - 対象ファイル: `src/Recognizer/FaceComparisonStatus.cs`(新規), `src/Recognizer/FaceComparisonResult.cs`(新規), `src/Recognizer/FaceEmbeddingResult.cs`(新規)
