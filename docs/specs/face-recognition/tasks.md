@@ -46,7 +46,7 @@
     - 検証コマンド: `dotnet build`
 
 - [ ] 5. FaceRecognizer 公開 API(パイプライン統合)
-  - [ ] 5.1 (P) CompareEmbeddings(static コサイン類似度)のテストと実装
+  - [x] 5.1 (P) CompareEmbeddings(static コサイン類似度)のテストと実装
         _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5_
         _Boundary: FaceRecognizer_
     - 対象ファイル: `src/Recognizer/FaceRecognizer.cs`(新規・static メソッドのみ), `tests/Recognizer.Tests/FaceRecognizerTests.cs`(新規)
