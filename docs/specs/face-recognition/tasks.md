@@ -89,7 +89,7 @@
     - 検証コマンド: `dotnet test --filter "FullyQualifiedName~FaceRecognizerTests"`(キャンセル済みトークン → OperationCanceledException・同一インスタンスへの並行呼び出しが単独時と同一結果)
 
 - [ ] 6. 公開 API サーフェスと非回帰の検証
-  - [ ] 6.1 PublicApiTests の 9 型更新・追加 internal 型検査・全体 green 確認
+  - [x] 6.1 PublicApiTests の 9 型更新・追加 internal 型検査・全体 green 確認
         _Requirements: 7.1, 7.3, 7.4, 7.5_
         _Boundary: PublicApiSurface_
         _Depends: 5.5_
