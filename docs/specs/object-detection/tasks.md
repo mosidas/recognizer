@@ -61,7 +61,7 @@
     - 対象ファイル: `src/Recognizer/ObjectDetector.cs`(変更), `tests/Recognizer.Tests/ObjectDetectorTests.cs`(変更)
     - 設計参照: design.md §6(FaceDetector と同一の委譲・Mat 所有権パターン)、§8(不存在パス・非画像・不正/空バイト列・null の各分岐を個別テスト。Mat 版との結果同一性)
     - 検証コマンド: `dotnet test --filter "FullyQualifiedName~ObjectDetectorTests"`
-  - [ ] 5.3 クラス名解決(4 規則)のテストと実装確認
+  - [x] 5.3 クラス名解決(4 規則)のテストと実装確認
         _Requirements: 3.1, 3.2, 3.3, 3.4_
         _Boundary: ObjectDetector_
         _Depends: 3.2, 5.1_

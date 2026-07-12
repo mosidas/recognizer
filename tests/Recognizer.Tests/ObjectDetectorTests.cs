@@ -1,6 +1,7 @@
 using System.Drawing;
 using Microsoft.ML.OnnxRuntime;
 using OpenCvSharp;
+using Recognizer.Internal;
 
 namespace Recognizer.Tests;
 
@@ -464,5 +465,113 @@ public sealed class ObjectDetectorTests
         {
             _ = detector.DetectAsync(bytes, nmsThreshold: 1.1f);
         });
+    }
+
+    // --- クラス名解決の 4 規則(タスク 5.3・要件 3.1〜3.4) ---
+    // fixture ⑫(C=3)の 3 件は P0(ClassId 0)→P2(ClassId 1)→P3(ClassId 2)の降順で確定している。
+
+    // 3.1: classNames 指定時、各検出の ClassName が classNames[ClassId] に解決される(要件 3.1)
+    [Fact]
+    public async Task DetectAsync_classNames指定時はClassIdで名前解決する()
+    {
+        string[] classNames = ["apple", "banana", "cherry"];
+        using ObjectDetector detector = new(FixturePath("object_nchw_transposed_4c3.onnx"), classNames);
+        using Mat image = SquareImage();
+
+        IReadOnlyList<ObjectDetection> results = await detector.DetectAsync(image);
+
+        Assert.Equal(3, results.Count);
+        Assert.Equal("apple", results[0].ClassName);   // ClassId 0
+        Assert.Equal("banana", results[1].ClassName);  // ClassId 1
+        Assert.Equal("cherry", results[2].ClassName);  // ClassId 2
+    }
+
+    // 3.2: classNames 省略かつクラス数 80 のとき、ClassName が COCO 名に解決される(要件 3.2)
+    // ⑭ は ClassId 0/2/15(person/car/cat)を person(0.95)→car(0.88)→cat(0.75)の降順で返す。
+    [Fact]
+    public async Task DetectAsync_classNames省略でC80はCOCO名に解決する()
+    {
+        using ObjectDetector detector = new(FixturePath("object_transposed_coco80.onnx"));
+        using Mat image = SquareImage();
+
+        IReadOnlyList<ObjectDetection> results = await detector.DetectAsync(image);
+
+        Assert.Equal(3, results.Count);
+
+        AssertClose(0.95f, results[0].Confidence);
+        Assert.Equal(0, results[0].ClassId);
+        Assert.Equal("person", results[0].ClassName);
+
+        AssertClose(0.88f, results[1].Confidence);
+        Assert.Equal(2, results[1].ClassId);
+        Assert.Equal("car", results[1].ClassName);
+
+        AssertClose(0.75f, results[2].Confidence);
+        Assert.Equal(15, results[2].ClassId);
+        Assert.Equal("cat", results[2].ClassName);
+    }
+
+    // 3.3: classNames 省略かつクラス数 80 以外(⑫ は C=3)のとき、ClassName が "class_{id}" になる(要件 3.3)
+    [Fact]
+    public async Task DetectAsync_classNames省略でC80以外はclass_idに解決する()
+    {
+        using ObjectDetector detector = new(FixturePath("object_nchw_transposed_4c3.onnx"));
+        using Mat image = SquareImage();
+
+        IReadOnlyList<ObjectDetection> results = await detector.DetectAsync(image);
+
+        Assert.Equal(3, results.Count);
+        Assert.Equal("class_0", results[0].ClassName);
+        Assert.Equal("class_1", results[1].ClassName);
+        Assert.Equal("class_2", results[2].ClassName);
+    }
+
+    // 3.4: classNames が短く ClassId が範囲外でも、例外にせず範囲外は "class_{id}" にフォールバックする(要件 3.4)
+    // ⑫ の ClassId 0/1/2 のうち、要素数 1 の classNames では 0 のみ解決・1/2 は範囲外。
+    [Fact]
+    public async Task DetectAsync_classNames範囲外は例外なくclass_idにフォールバックする()
+    {
+        string[] classNames = ["only-one"];
+        using ObjectDetector detector = new(FixturePath("object_nchw_transposed_4c3.onnx"), classNames);
+        using Mat image = SquareImage();
+
+        IReadOnlyList<ObjectDetection> results = await detector.DetectAsync(image);
+
+        Assert.Equal(3, results.Count);
+        Assert.Equal("only-one", results[0].ClassName);  // ClassId 0(範囲内)
+        Assert.Equal("class_1", results[1].ClassName);   // ClassId 1(範囲外)
+        Assert.Equal("class_2", results[2].ClassName);   // ClassId 2(範囲外)
+    }
+
+    // 3.1 の優先順位: クラス数 80 のモデルでも classNames 指定が COCO 名より優先される(要件 3.1 > 3.2)。
+    // classNames は 80 要素でなくてよい(⑭ の ClassId 0/2 を含む長さで、COCO 名と異なる名前を与える)。
+    [Fact]
+    public async Task DetectAsync_C80でもclassNames指定がCOCO名より優先される()
+    {
+        // ⑭ の検出 ClassId は 0(person)・2(car)・15(cat)。COCO と異なる名前を割り当てて優先を確認する。
+        string[] classNames = new string[16];
+        for (int i = 0; i < classNames.Length; i++)
+        {
+            classNames[i] = $"custom-{i}";
+        }
+
+        using ObjectDetector detector = new(FixturePath("object_transposed_coco80.onnx"), classNames);
+        using Mat image = SquareImage();
+
+        IReadOnlyList<ObjectDetection> results = await detector.DetectAsync(image);
+
+        Assert.Equal(3, results.Count);
+        Assert.Equal("custom-0", results[0].ClassName);   // COCO なら "person"
+        Assert.Equal("custom-2", results[1].ClassName);   // COCO なら "car"
+        Assert.Equal("custom-15", results[2].ClassName);  // COCO なら "cat"
+    }
+
+    // CocoClassNames の静的検証: 要素数 80・先頭 "person"・末尾 "toothbrush"(InternalsVisibleTo で直接参照)。
+    [Fact]
+    public void CocoClassNames_要素数80で先頭person末尾toothbrush()
+    {
+        Assert.Equal(80, CocoClassNames.Names.Count);
+        Assert.Equal("person", CocoClassNames.Names[0]);
+        Assert.Equal("toothbrush", CocoClassNames.Names[^1]);
     }
 }
