@@ -12,7 +12,7 @@
     - 対象ファイル: `Recognizer.sln`(新規), `src/Recognizer/Recognizer.csproj`(新規), `tests/Recognizer.Tests/Recognizer.Tests.csproj`(新規)
     - 設計参照: design.md §2 技術スタック、§3 File Structure Plan(nullable 有効・`InternalsVisibleTo("Recognizer.Tests")`・依存 4 パッケージ限定)
     - 検証コマンド: `dotnet build` / `dotnet test`(空テストで終了コード 0)
-  - [ ] 1.2 fixture 生成スクリプトと 6 種のダミー ONNX fixture の生成・コミット
+  - [x] 1.2 fixture 生成スクリプトと 6 種のダミー ONNX fixture の生成・コミット
         _Requirements: 2.1, 2.2, 2.3, 2.6_
         _Boundary: TestFixtures_
         _Depends: 1.1_
@@ -118,3 +118,5 @@
 ## Implementation Notes
 
 - 知識 port: 注入なし(`docs/dev/ports/` が存在しないため。`ports.py --skill dev-implement` で確認)。準拠規約は CLAUDE.md の .NET コーディング規約と design.md の契約。
+- fixture(タスク 1.2): 入力名 `images`・出力名 `output`・opset 17・N=6。既定閾値(0.7/0.5)での期待結果は A(0.95)→B(0.85)→D(0.75)。期待値の正本は `tests/Recognizer.Tests/Fixtures/README.md`。座標は 640x640 レターボックス空間・中心形式。F=20 のランドマーク点 conf は 0.99(C# 側は破棄)。
+- fixture の再生成はバイト一致で再現する(/tmp/onnx-venv の python で tools/generate_test_models.py 実行)。
