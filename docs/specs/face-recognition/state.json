@@ -1,11 +1,11 @@
 {
   "workflow": "sdd",
   "unit": "face-recognition",
-  "state": "design-approved",
+  "state": "tasks-approved",
   "approvals": {
     "requirements": true,
     "design": true,
-    "tasks": false
+    "tasks": true
   },
   "created": "2026-07-12",
   "updated": "2026-07-12"
