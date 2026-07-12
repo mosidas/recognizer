@@ -574,4 +574,76 @@ public sealed class ObjectDetectorTests
         Assert.Equal("person", CocoClassNames.Names[0]);
         Assert.Equal("toothbrush", CocoClassNames.Names[^1]);
     }
+
+    // --- 非同期契約: CancellationToken・キャンセル・並行・Dispose 後(タスク 5.4・要件 5.1/5.2/5.3/5.5) ---
+
+    // 正常系: CancellationToken を明示的に渡す呼び出しが正常完了する(要件 5.1)
+    // 5.1 の「省略可で受け取る」は省略呼び出し(既存テスト群)で担保済み。ここは明示指定経路が通ることを確認する。
+    [Fact]
+    public async Task DetectAsync_明示的なCancellationTokenを受け取り完了する()
+    {
+        using ObjectDetector detector = new(FixturePath("object_nchw_transposed_4c3.onnx"));
+        using Mat image = SquareImage();
+        using CancellationTokenSource cts = new();
+
+        IReadOnlyList<ObjectDetection> results = await detector.DetectAsync(image, cancellationToken: cts.Token);
+
+        Assert.Equal(3, results.Count);
+    }
+
+    // 異常系: 事前にキャンセル済みのトークンでは OperationCanceledException(派生含む)を送出する(要件 5.2)
+    [Fact]
+    public async Task DetectAsync_キャンセル済みトークンで中断する()
+    {
+        using ObjectDetector detector = new(FixturePath("object_nchw_transposed_4c3.onnx"));
+        using Mat image = SquareImage();
+        using CancellationTokenSource cts = new();
+        cts.Cancel();
+
+        _ = await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => detector.DetectAsync(image, cancellationToken: cts.Token));
+    }
+
+    // 正常系: 同一インスタンスへの並行呼び出しが単独実行と同一結果(件数・ClassId・信頼度・座標)を返す(要件 5.3)
+    // fixture は入力非依存の定数出力のため結果は決定論的。8 並行 × 4 回で並行 Run のスレッド安全性を確認する。
+    [Fact]
+    public async Task DetectAsync_並行呼び出しが単独実行と同一結果を返す()
+    {
+        using ObjectDetector detector = new(FixturePath("object_nchw_transposed_4c3.onnx"));
+        using Mat image = SquareImage();
+        IReadOnlyList<ObjectDetection> expected = await detector.DetectAsync(image);
+
+        const int parallelism = 8;
+        const int rounds = 4;
+        for (int round = 0; round < rounds; round++)
+        {
+            Task<IReadOnlyList<ObjectDetection>>[] tasks = new Task<IReadOnlyList<ObjectDetection>>[parallelism];
+            for (int i = 0; i < parallelism; i++)
+            {
+                tasks[i] = detector.DetectAsync(image);
+            }
+
+            IReadOnlyList<ObjectDetection>[] all = await Task.WhenAll(tasks);
+
+            foreach (IReadOnlyList<ObjectDetection> actual in all)
+            {
+                AssertSameDetections(expected, actual);
+            }
+        }
+    }
+
+    // 異常系: Dispose 済みインスタンスへの DetectAsync(Mat)は ObjectDisposedException を同期送出する(要件 5.5)
+    // Task を破棄(_ =)しても throw が起きることで「呼び出し時点の同期送出」を保証する。
+    [Fact]
+    public void DetectAsync_Dispose後はObjectDisposedExceptionを同期送出する()
+    {
+        ObjectDetector detector = new(FixturePath("object_nchw_transposed_4c3.onnx"));
+        using Mat image = SquareImage();
+        detector.Dispose();
+
+        _ = Assert.Throws<ObjectDisposedException>(() =>
+        {
+            _ = detector.DetectAsync(image);
+        });
+    }
 }

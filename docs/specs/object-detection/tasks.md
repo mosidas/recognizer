@@ -68,7 +68,7 @@
     - 対象ファイル: `tests/Recognizer.Tests/ObjectDetectorTests.cs`(変更), `src/Recognizer/ObjectDetector.cs`(必要時のみ変更)
     - 設計参照: design.md §6 クラス名解決。classNames 指定(fixture ⑫)・省略時 COCO 名(fixture ⑭、person 等の実名)・省略時 class_{id}(fixture ⑫、C=3)・範囲外フォールバック(短い classNames)の 4 規則 + CocoClassNames の要素数 80・先頭/末尾名を個別テスト
     - 検証コマンド: `dotnet test --filter "FullyQualifiedName~ObjectDetectorTests"`
-  - [ ] 5.4 非同期契約(キャンセル・並行・Dispose 後)のテストと実装確認
+  - [x] 5.4 非同期契約(キャンセル・並行・Dispose 後)のテストと実装確認
         _Requirements: 5.1, 5.2, 5.3, 5.5_
         _Boundary: ObjectDetector_
         _Depends: 5.1_
