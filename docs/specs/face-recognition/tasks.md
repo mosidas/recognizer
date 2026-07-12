@@ -23,7 +23,7 @@
     - 検証コマンド: `dotnet test --filter "FullyQualifiedName~ModelIntrospectorTests"`(rank1 `[D]`/rank2 `[1,D]` の次元確定 / 動的入力軸 → 112 既定(⑲) / 非対応 4 分岐を各 fixture で個別行使: 複数出力 → 既存 `face_multi_output.onnx`・rank3 以上 → ⑳ `embed_unsupported_rank3.onnx`・rank2 先頭次元 ≠ 1 → ㉒ `embed_unsupported_rank2_batch2.onnx`・D 動的 → ㉓ `embed_unsupported_dynamic_dim.onnx` の各々で NotSupportedException / 入力判別不能は既存入力側非対応 fixture を再利用 / 既存検出判別テストの非回帰)
 
 - [ ] 3. 純粋計算部品(境界独立・並行可)
-  - [ ] 3.1 (P) FaceCropper(正方形化・境界クリップ・退化/非交差検査)のテストと実装
+  - [x] 3.1 (P) FaceCropper(正方形化・境界クリップ・退化/非交差検査)のテストと実装
         _Requirements: 3.4, 3.7_
         _Boundary: FaceCropper_
     - 対象ファイル: `src/Recognizer/Internal/FaceCropper.cs`(新規), `tests/Recognizer.Tests/FaceCropperTests.cs`(新規)
