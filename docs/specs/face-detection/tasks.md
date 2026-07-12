@@ -6,7 +6,7 @@
 ## タスク一覧
 
 - [ ] 1. プロジェクト骨格とテスト fixture 基盤
-  - [ ] 1.1 ソリューションと 2 プロジェクト(src/Recognizer、tests/Recognizer.Tests)の作成
+  - [x] 1.1 ソリューションと 2 プロジェクト(src/Recognizer、tests/Recognizer.Tests)の作成
         _Requirements: 5.4, 5.5_
         _Boundary: Solution_
     - 対象ファイル: `Recognizer.sln`(新規), `src/Recognizer/Recognizer.csproj`(新規), `tests/Recognizer.Tests/Recognizer.Tests.csproj`(新規)
@@ -117,4 +117,4 @@
 
 ## Implementation Notes
 
-(このセクションは dev-implement が実装中の学習・選択した知識 port・横断的な気付きを追記する領域。初期は空)
+- 知識 port: 注入なし(`docs/dev/ports/` が存在しないため。`ports.py --skill dev-implement` で確認)。準拠規約は CLAUDE.md の .NET コーディング規約と design.md の契約。
