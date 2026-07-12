@@ -29,7 +29,7 @@
     - 対象ファイル: `src/Recognizer/Internal/FaceCropper.cs`(新規), `tests/Recognizer.Tests/FaceCropperTests.cs`(新規)
     - 設計参照: design.md §6 FaceCropper(`Validate`・`CropSquare`。中心保持・辺長 = 長辺 × 1.4・`LetterboxParams.ClampToBounds`(`src/Recognizer/Internal/Letterbox.cs`)再利用・`Clone` 返却・退化 → ArgumentException)
     - 検証コマンド: `dotnet test --filter "FullyQualifiedName~FaceCropperTests"`(正方形サイズ・中心保持・境界クリップ・幅/高さ ≤ 0・画像非交差の各分岐)
-  - [ ] 3.2 (P) EmbeddingPreprocessor(リサイズ・BGR→RGB・正規化・NCHW/NHWC テンソル化)のテストと実装
+  - [x] 3.2 (P) EmbeddingPreprocessor(リサイズ・BGR→RGB・正規化・NCHW/NHWC テンソル化)のテストと実装
         _Requirements: 2.2_
         _Boundary: EmbeddingPreprocessor_
         _Depends: 2.1_
