@@ -5,7 +5,7 @@
 
 ## タスク一覧
 
-- [ ] 1. テスト fixture の増設
+- [x] 1. テスト fixture の増設
   - [x] 1.1 物体検出用 fixture 4 種(⑫〜⑮)の生成と README 追記
         _Requirements: 2.3, 2.4, 2.5, 2.8, 3.2, 4.2_
         _Boundary: TestFixtures_
@@ -13,7 +13,7 @@
     - 設計参照: design.md §9(⑫ 転置 4+C・異クラス同一座標ペア / ⑬ 標準 5+C・objectness 合成既知値 / ⑭ 転置 C=80 / ⑮ F=4 非対応。N > F 規則)、research.md §4・§6
     - 検証コマンド: `/tmp/onnx-venv/bin/python tools/generate_test_models.py` の後、新規 4 ファイルの存在・各 100 KB 未満・既存 fixture 11 種のバイト列不変(SHA 比較)
 
-- [ ] 2. モデル判別の拡張
+- [x] 2. モデル判別の拡張
   - [x] 2.1 ModelIntrospector への IntrospectObject / ClassifyObjectOutput 追加のテストと実装
         _Requirements: 2.1, 2.2, 2.3, 2.8_
         _Boundary: ModelIntrospector_
@@ -22,7 +22,7 @@
     - 設計参照: design.md §6 ModelIntrospector 規則 (o-d)〜(o-g)(F/N 識別・d1=d2 転置優先・転置=4+C/標準=5+C・F 下限・複数出力・動的出力軸の保留を 1 ガード 1 テストで)
     - 検証コマンド: `dotnet test --filter "FullyQualifiedName~ModelIntrospectorTests"` + `dotnet test`(全体。既存 80 テストの非回帰)
 
-- [ ] 3. 出力パースとクラス名定数
+- [x] 3. 出力パースとクラス名定数
   - [x]* 3.1 (P) ObjectOutputParser(4+C/5+C パース・argmax・信頼度合成・閾値フィルタ)の実装
         _Requirements: 2.4, 2.5, 4.1_
         _Boundary: ObjectOutputParser_
@@ -37,7 +37,7 @@
     - 設計参照: design.md §6 CocoClassNames、research.md §5(coco.yaml が正本)。要素数 80 等の検証は 5.3 が担う
     - 検証コマンド: `dotnet build`
 
-- [ ] 4. ObjectDetector 骨格
+- [x] 4. ObjectDetector 骨格
   - [x] 4.1 ObjectDetection record とコンストラクタ(ガード・物体用判別・classNames 保持)・Dispose のテストと実装
         _Requirements: 2.1, 2.6, 2.7, 2.8, 2.9, 5.4_
         _Boundary: ObjectDetector_
@@ -46,7 +46,7 @@
     - 設計参照: design.md §6 ObjectDetector(コンストラクタ契約・classNames 非防御コピー)、§8(null / FileNotFound / ORT 透過 / NotSupported=fixture ⑮ を 1 ガード 1 テストで)。公開シグネチャは api-spec §3.5 と文字単位一致
     - 検証コマンド: `dotnet test --filter "FullyQualifiedName~ObjectDetectorTests"`
 
-- [ ] 5. DetectAsync 統合
+- [x] 5. DetectAsync 統合
   - [x] 5.1 DetectAsync(Mat)のパイプライン統合(クラス単位 NMS 含む)のテストと実装
         _Requirements: 1.1, 1.5, 1.6, 2.4, 2.5, 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7_
         _Boundary: ObjectDetector_
@@ -76,8 +76,8 @@
     - 設計参照: design.md §6・§10(キャンセル済みトークン・並行 Task.WhenAll 同一結果・Dispose 後の同期送出を個別テスト。FaceDetector の 6.4 と同一方式)
     - 検証コマンド: `dotnet test --filter "FullyQualifiedName~ObjectDetectorTests"`(2 回実行し並行テストの安定性確認)
 
-- [ ] 6. 公開面の検査と仕上げ
-  - [ ] 6.1 公開 API 面の期待集合更新と全体非回帰の最終確認
+- [x] 6. 公開面の検査と仕上げ
+  - [x] 6.1 公開 API 面の期待集合更新と全体非回帰の最終確認
         _Requirements: 6.1, 6.2, 6.3, 6.4, 6.5_
         _Boundary: Solution_
         _Depends: 5.2, 5.3, 5.4_
