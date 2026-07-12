@@ -100,7 +100,7 @@
     - 検証コマンド: `dotnet test --filter "FullyQualifiedName~FaceDetectorTests"`
 
 - [ ] 7. 公開面の検査と仕上げ
-  - [ ] 7.1 公開 API 面と非機能のテスト
+  - [x] 7.1 公開 API 面と非機能のテスト
         _Requirements: 5.1, 5.2, 5.3, 5.4_
         _Boundary: FaceDetector_
         _Depends: 6.3, 6.4_
