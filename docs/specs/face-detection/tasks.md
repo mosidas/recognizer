@@ -70,7 +70,7 @@
     - 検証コマンド: `dotnet build`
 
 - [ ] 6. FaceDetector 統合(垂直スライス完成)
-  - [ ] 6.1 コンストラクタ(ガード・モデルロード・形式判別)と Dispose のテストと実装
+  - [x] 6.1 コンストラクタ(ガード・モデルロード・形式判別)と Dispose のテストと実装
         _Requirements: 2.1, 2.4, 2.5, 2.6, 2.7, 4.4_
         _Boundary: FaceDetector_
         _Depends: 1.2, 4.1_
