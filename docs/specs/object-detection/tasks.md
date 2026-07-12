@@ -23,7 +23,7 @@
     - 検証コマンド: `dotnet test --filter "FullyQualifiedName~ModelIntrospectorTests"` + `dotnet test`(全体。既存 80 テストの非回帰)
 
 - [ ] 3. 出力パースとクラス名定数
-  - [ ]* 3.1 (P) ObjectOutputParser(4+C/5+C パース・argmax・信頼度合成・閾値フィルタ)の実装
+  - [x]* 3.1 (P) ObjectOutputParser(4+C/5+C パース・argmax・信頼度合成・閾値フィルタ)の実装
         _Requirements: 2.4, 2.5, 4.1_
         _Boundary: ObjectOutputParser_
         _Depends: 2.1_
