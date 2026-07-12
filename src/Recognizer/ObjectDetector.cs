@@ -87,6 +87,84 @@ public sealed class ObjectDetector : IDisposable
             cancellationToken);
     }
 
+    /// <summary>
+    /// ファイルパスから画像を読み込んで物体を検出する。フォーマットは OpenCV が自動判別する(要件 1.2)。
+    /// </summary>
+    /// <param name="imagePath">画像ファイルのパス。</param>
+    /// <param name="confidenceThreshold">この値未満の候補を除外する(0.0〜1.0)。</param>
+    /// <param name="nmsThreshold">NMS の IoU 閾値(0.0〜1.0)。</param>
+    /// <param name="cancellationToken">キャンセルトークン。</param>
+    /// <exception cref="ObjectDisposedException">破棄済みインスタンス(要件 5.5)。</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="imagePath"/> が null(要件 1.6)。</exception>
+    /// <exception cref="ArgumentException">パスが存在しない・画像としてデコードできない、または閾値が範囲外(要件 1.4, 4.7)。</exception>
+    public Task<IReadOnlyList<ObjectDetection>> DetectAsync(
+        string imagePath,
+        float confidenceThreshold = 0.5f,
+        float nmsThreshold = 0.5f,
+        CancellationToken cancellationToken = default)
+    {
+        // null ガードは同期(design §6 事前条件)。ImageDecoder も同一契約だが、パス固有の null をここで明示的に弾く。
+        ArgumentNullException.ThrowIfNull(imagePath);
+
+        // デコードは同期的に行う: 存在しない・画像でないパスは「呼び出し時点で ArgumentException」が契約(design §6・要件 1.4)。
+        Mat image = ImageDecoder.DecodeFile(imagePath);
+        return DetectOwnedImageAsync(image, confidenceThreshold, nmsThreshold, cancellationToken);
+    }
+
+    /// <summary>
+    /// エンコード済み画像バイト列をデコードして物体を検出する。フォーマットは OpenCV が自動判別する(要件 1.3)。
+    /// </summary>
+    /// <param name="encodedImage">エンコード済み画像バイト列。</param>
+    /// <param name="confidenceThreshold">この値未満の候補を除外する(0.0〜1.0)。</param>
+    /// <param name="nmsThreshold">NMS の IoU 閾値(0.0〜1.0)。</param>
+    /// <param name="cancellationToken">キャンセルトークン。</param>
+    /// <exception cref="ObjectDisposedException">破棄済みインスタンス(要件 5.5)。</exception>
+    /// <exception cref="ArgumentException">空・画像としてデコードできないバイト列、または閾値が範囲外(要件 1.4, 4.7)。</exception>
+    public Task<IReadOnlyList<ObjectDetection>> DetectAsync(
+        ReadOnlyMemory<byte> encodedImage,
+        float confidenceThreshold = 0.5f,
+        float nmsThreshold = 0.5f,
+        CancellationToken cancellationToken = default)
+    {
+        // デコードは同期的に行う: 空・画像でないバイト列は「呼び出し時点で ArgumentException」が契約(design §6・要件 1.4)。
+        Mat image = ImageDecoder.DecodeBytes(encodedImage);
+        return DetectOwnedImageAsync(image, confidenceThreshold, nmsThreshold, cancellationToken);
+    }
+
+    // デコード済み Mat の所有権を引き取り、Mat 版へ委譲する。破棄済み・閾値ガードは Mat 版に一元化し重複させない。
+    private Task<IReadOnlyList<ObjectDetection>> DetectOwnedImageAsync(
+        Mat image,
+        float confidenceThreshold,
+        float nmsThreshold,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            // Why not: Mat 版の引数ガード(破棄済み・閾値範囲外)は Task.Run 前に同期送出されるため、
+            // ここでの同期委譲によりオーバーロードでも「呼び出し時点の同期送出」が維持される(design §6)。
+            Task<IReadOnlyList<ObjectDetection>> pipeline =
+                DetectAsync(image, confidenceThreshold, nmsThreshold, cancellationToken);
+            return AwaitAndDisposeAsync(pipeline, image);
+        }
+        catch
+        {
+            // Why not: Mat 版の同期ガード違反時に、このメソッドが所有する Mat をリークさせないため破棄して再送出する。
+            image.Dispose();
+            throw;
+        }
+    }
+
+    // 所有 Mat をパイプライン完了後(正常・例外・キャンセルのいずれでも)に確実に破棄する。
+    private static async Task<IReadOnlyList<ObjectDetection>> AwaitAndDisposeAsync(
+        Task<IReadOnlyList<ObjectDetection>> pipeline,
+        Mat image)
+    {
+        using (image)
+        {
+            return await pipeline.ConfigureAwait(false);
+        }
+    }
+
     // 前処理 → 推論 → パース → クラス単位 NMS → 逆変換・クリップ → クラス名解決 の編成(design §4)。
     private IReadOnlyList<ObjectDetection> RunPipeline(
         Mat image,

@@ -54,7 +54,7 @@
     - 対象ファイル: `src/Recognizer/ObjectDetector.cs`(変更), `tests/Recognizer.Tests/ObjectDetectorTests.cs`(変更)
     - 設計参照: design.md §4 フロー、§6(クラス単位 NMS のグルーピングとマージ)。fixture ⑫で異クラス同一座標ペアの両残り・同クラス抑制・argmax・降順・空リスト・既定値 0.5/0.5・閾値範囲外・空 Mat・**null Mat(1.6 の Mat 側分岐。1 ガード 1 テスト)**、fixture ⑬で objectness×最大クラススコア、非正方入力で座標復元を個別テスト
     - 検証コマンド: `dotnet test --filter "FullyQualifiedName~ObjectDetectorTests"` + `dotnet test`(全体)
-  - [ ] 5.2 パス / バイト列オーバーロードのテストと実装
+  - [x] 5.2 パス / バイト列オーバーロードのテストと実装
         _Requirements: 1.2, 1.3, 1.4, 1.6_
         _Boundary: ObjectDetector_
         _Depends: 5.1_

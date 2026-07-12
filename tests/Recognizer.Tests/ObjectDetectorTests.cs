@@ -123,6 +123,20 @@ public sealed class ObjectDetectorTests
         AssertClose(expected.Height, actual.Height);
     }
 
+    // オーバーロードが Mat 版と同一契約(件数・ClassId・信頼度・座標)であることを確認する(要件 1.2/1.3)。
+    private static void AssertSameDetections(
+        IReadOnlyList<ObjectDetection> expected,
+        IReadOnlyList<ObjectDetection> actual)
+    {
+        Assert.Equal(expected.Count, actual.Count);
+        for (int i = 0; i < expected.Count; i++)
+        {
+            Assert.Equal(expected[i].ClassId, actual[i].ClassId);
+            AssertClose(expected[i].Confidence, actual[i].Confidence);
+            AssertBox(expected[i].BBox, actual[i].BBox);
+        }
+    }
+
     // 正常系: 既定閾値(引数省略 = 0.5/0.5)でクラス単位 NMS 後 P0→P2→P3 の 3 件を信頼度降順で返す。
     // 同クラス P1 は P0 に抑制され、異クラス同座標 P2 は残る(要件 1.1/4.2/4.3/4.6)。argmax の ClassId と
     // classNames 省略(C=3 → "class_{id}")の解決も併せて確認する(5.3 の先行確認を兼ねる)。
@@ -303,6 +317,152 @@ public sealed class ObjectDetectorTests
         _ = Assert.Throws<ArgumentException>(() =>
         {
             _ = detector.DetectAsync(image, nmsThreshold: threshold);
+        });
+    }
+
+    // --- DetectAsync オーバーロード(パス / バイト列)(タスク 5.2) ---
+
+    // 正常系: パス版が Mat 版と同一結果(件数・ClassId・信頼度・座標)を返す(要件 1.2)
+    [Fact]
+    public async Task DetectAsync_パス版がMat版と同一結果を返す()
+    {
+        using ObjectDetector detector = new(FixturePath("object_nchw_transposed_4c3.onnx"));
+        using Mat image = SquareImage();
+        IReadOnlyList<ObjectDetection> expected = await detector.DetectAsync(image);
+
+        string tempPath = Path.Combine(Path.GetTempPath(), $"object_{Guid.NewGuid():N}.png");
+        Cv2.ImWrite(tempPath, image);
+        try
+        {
+            IReadOnlyList<ObjectDetection> actual = await detector.DetectAsync(tempPath);
+
+            AssertSameDetections(expected, actual);
+        }
+        finally
+        {
+            File.Delete(tempPath);
+        }
+    }
+
+    // 正常系: バイト列版が Mat 版と同一結果(件数・ClassId・信頼度・座標)を返す(要件 1.3)
+    [Fact]
+    public async Task DetectAsync_バイト列版がMat版と同一結果を返す()
+    {
+        using ObjectDetector detector = new(FixturePath("object_nchw_transposed_4c3.onnx"));
+        using Mat image = SquareImage();
+        IReadOnlyList<ObjectDetection> expected = await detector.DetectAsync(image);
+
+        Cv2.ImEncode(".png", image, out byte[] encoded);
+        ReadOnlyMemory<byte> bytes = encoded;
+
+        IReadOnlyList<ObjectDetection> actual = await detector.DetectAsync(bytes);
+
+        AssertSameDetections(expected, actual);
+    }
+
+    // 異常系: 存在しないパスは ArgumentException を同期送出する(要件 1.4、1 ガード 1 テスト)
+    [Fact]
+    public void DetectAsync_存在しないパスはArgumentException()
+    {
+        using ObjectDetector detector = new(FixturePath("object_nchw_transposed_4c3.onnx"));
+        string missing = Path.Combine(Path.GetTempPath(), $"missing_{Guid.NewGuid():N}.png");
+
+        _ = Assert.Throws<ArgumentException>(() =>
+        {
+            _ = detector.DetectAsync(missing);
+        });
+    }
+
+    // 異常系: 画像でないファイルは ArgumentException を同期送出する(要件 1.4、1 ガード 1 テスト)
+    [Fact]
+    public void DetectAsync_画像でないファイルはArgumentException()
+    {
+        using ObjectDetector detector = new(FixturePath("object_nchw_transposed_4c3.onnx"));
+        string tempPath = Path.Combine(Path.GetTempPath(), $"notimage_{Guid.NewGuid():N}.txt");
+        File.WriteAllText(tempPath, "これは画像ではありません");
+        try
+        {
+            _ = Assert.Throws<ArgumentException>(() =>
+            {
+                _ = detector.DetectAsync(tempPath);
+            });
+        }
+        finally
+        {
+            File.Delete(tempPath);
+        }
+    }
+
+    // 異常系: 画像としてデコードできない不正バイト列は ArgumentException を同期送出する(要件 1.4、1 ガード 1 テスト)
+    [Fact]
+    public void DetectAsync_不正バイト列はArgumentException()
+    {
+        using ObjectDetector detector = new(FixturePath("object_nchw_transposed_4c3.onnx"));
+        ReadOnlyMemory<byte> garbage = new byte[] { 0x00, 0x01, 0x02, 0x03, 0x04 };
+
+        _ = Assert.Throws<ArgumentException>(() =>
+        {
+            _ = detector.DetectAsync(garbage);
+        });
+    }
+
+    // 異常系: 空バイト列は ArgumentException を同期送出する(要件 1.4、1 ガード 1 テスト)
+    [Fact]
+    public void DetectAsync_空バイト列はArgumentException()
+    {
+        using ObjectDetector detector = new(FixturePath("object_nchw_transposed_4c3.onnx"));
+
+        _ = Assert.Throws<ArgumentException>(() =>
+        {
+            _ = detector.DetectAsync(ReadOnlyMemory<byte>.Empty);
+        });
+    }
+
+    // 異常系: null の imagePath は ArgumentNullException を同期送出する(要件 1.6)
+    [Fact]
+    public void DetectAsync_nullパスはArgumentNullException()
+    {
+        using ObjectDetector detector = new(FixturePath("object_nchw_transposed_4c3.onnx"));
+
+        _ = Assert.Throws<ArgumentNullException>(() =>
+        {
+            _ = detector.DetectAsync((string)null!);
+        });
+    }
+
+    // 異常系: パス版でも閾値範囲外は ArgumentException を同期送出する(要件 4.7、オーバーロードへのガード波及)
+    [Fact]
+    public void DetectAsync_パス版の閾値範囲外はArgumentException()
+    {
+        using ObjectDetector detector = new(FixturePath("object_nchw_transposed_4c3.onnx"));
+        using Mat image = SquareImage();
+        string tempPath = Path.Combine(Path.GetTempPath(), $"object_{Guid.NewGuid():N}.png");
+        Cv2.ImWrite(tempPath, image);
+        try
+        {
+            _ = Assert.Throws<ArgumentException>(() =>
+            {
+                _ = detector.DetectAsync(tempPath, confidenceThreshold: 1.1f);
+            });
+        }
+        finally
+        {
+            File.Delete(tempPath);
+        }
+    }
+
+    // 異常系: バイト列版でも閾値範囲外は ArgumentException を同期送出する(要件 4.7、オーバーロードへのガード波及)
+    [Fact]
+    public void DetectAsync_バイト列版の閾値範囲外はArgumentException()
+    {
+        using ObjectDetector detector = new(FixturePath("object_nchw_transposed_4c3.onnx"));
+        using Mat image = SquareImage();
+        Cv2.ImEncode(".png", image, out byte[] encoded);
+        ReadOnlyMemory<byte> bytes = encoded;
+
+        _ = Assert.Throws<ArgumentException>(() =>
+        {
+            _ = detector.DetectAsync(bytes, nmsThreshold: 1.1f);
         });
     }
 }
