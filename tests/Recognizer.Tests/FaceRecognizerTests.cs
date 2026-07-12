@@ -391,4 +391,165 @@ public sealed class FaceRecognizerTests
             _ = recognizer.ExtractEmbeddingAsync(image);
         });
     }
+
+    // --- CompareFacesAsync(Mat, Mat)パイプラインと Status 3 分岐(タスク 5.4) ---
+    // 検出 fixture ㉑ は 640x640 単色の平均を conf に使う。明色(≥ 約 179)は検出、黒(0)は未検出。
+    // 埋め込み fixture ⑰ は単色画像で [mean(R), mean(G), mean(B), 1.0] = [(x−127.5)/128 ×3, 1] を出力する。
+    private static Mat BrightSquare(byte value) => new(640, 640, MatType.CV_8UC3, Scalar.All(value));
+
+    // 正常系: 双方が明色(検出あり)→ Status=Success・Similarity は埋め込みの解析的コサイン類似度・Face1/Face2 非 null(要件 4.1, 4.2)。
+    // 要件 4.5: 返却は類似度のみで同一人物判定を持たない(FaceComparisonResult に判定フィールドが無いことは型で担保。Success 時 Similarity のみ設定を確認)。
+    [Fact]
+    public async Task CompareFacesAsync_双方検出_Successと解析的類似度を返す()
+    {
+        using FaceRecognizer recognizer = ExtractRecognizer();
+        // 200/255 ≈ 0.78・190/255 ≈ 0.75 はいずれも既定 detectionThreshold=0.7 を超える。
+        using Mat image1 = BrightSquare(200);
+        using Mat image2 = BrightSquare(190);
+
+        FaceComparisonResult result = await recognizer.CompareFacesAsync(image1, image2);
+
+        // 単色のため各埋め込みは [Normalize(v)×3, 1.0]。CompareEmbeddings の期待値と照合する(解析検証)。
+        float[] expected1 = [Normalize(200), Normalize(200), Normalize(200), 1f];
+        float[] expected2 = [Normalize(190), Normalize(190), Normalize(190), 1f];
+        float expected = FaceRecognizer.CompareEmbeddings(expected1, expected2);
+
+        Assert.Equal(FaceComparisonStatus.Success, result.Status);
+        Assert.Equal(expected, result.Similarity, Epsilon);
+        Assert.InRange(result.Similarity, -1f, 1f);
+        Assert.NotNull(result.Face1);
+        Assert.NotNull(result.Face2);
+    }
+
+    // 異常系: 画像 1 が黒(未検出)→ Status=NoFaceInImage1・Similarity=0・Face1=null(画像 2 が明色でも)(要件 4.3)
+    [Fact]
+    public async Task CompareFacesAsync_画像1未検出_NoFaceInImage1()
+    {
+        using FaceRecognizer recognizer = ExtractRecognizer();
+        using Mat image1 = BlackSquare();
+        using Mat image2 = BrightSquare(200);
+
+        FaceComparisonResult result = await recognizer.CompareFacesAsync(image1, image2);
+
+        Assert.Equal(FaceComparisonStatus.NoFaceInImage1, result.Status);
+        Assert.Equal(0f, result.Similarity);
+        Assert.Null(result.Face1);
+    }
+
+    // 異常系: 両画像とも黒(いずれも未検出)→ NoFaceInImage1(要件 4.3 の但し書き。画像 1 未検出を優先)
+    [Fact]
+    public async Task CompareFacesAsync_両画像未検出_NoFaceInImage1()
+    {
+        using FaceRecognizer recognizer = ExtractRecognizer();
+        using Mat image1 = BlackSquare();
+        using Mat image2 = BlackSquare();
+
+        FaceComparisonResult result = await recognizer.CompareFacesAsync(image1, image2);
+
+        Assert.Equal(FaceComparisonStatus.NoFaceInImage1, result.Status);
+        Assert.Equal(0f, result.Similarity);
+    }
+
+    // 異常系: 画像 1 明色・画像 2 黒(画像 2 のみ未検出)→ Status=NoFaceInImage2・Similarity=0・Face2=null(要件 4.4)
+    [Fact]
+    public async Task CompareFacesAsync_画像2未検出_NoFaceInImage2()
+    {
+        using FaceRecognizer recognizer = ExtractRecognizer();
+        using Mat image1 = BrightSquare(200);
+        using Mat image2 = BlackSquare();
+
+        FaceComparisonResult result = await recognizer.CompareFacesAsync(image1, image2);
+
+        Assert.Equal(FaceComparisonStatus.NoFaceInImage2, result.Status);
+        Assert.Equal(0f, result.Similarity);
+        Assert.Null(result.Face2);
+    }
+
+    // 要件 4.6: 既定閾値 0.7 / 0.5 が使われる(閾値を渡さない呼び出しが成立し、明色 2 枚が検出される)
+    [Fact]
+    public async Task CompareFacesAsync_既定閾値で双方検出が成立する()
+    {
+        using FaceRecognizer recognizer = ExtractRecognizer();
+        using Mat image1 = BrightSquare(200);
+        using Mat image2 = BrightSquare(190);
+
+        FaceComparisonResult result = await recognizer.CompareFacesAsync(image1, image2);
+
+        Assert.Equal(FaceComparisonStatus.Success, result.Status);
+        Assert.InRange(result.Face1!.Confidence, 0.7f, 1f);
+        Assert.InRange(result.Face2!.Confidence, 0.7f, 1f);
+    }
+
+    // 異常系: detectionThreshold 範囲外 → ArgumentException(検出前の同期送出。要件 4.7)
+    [Theory]
+    [InlineData(-0.1f)]
+    [InlineData(1.1f)]
+    public void CompareFacesAsync_detectionThreshold範囲外はArgumentException(float threshold)
+    {
+        using FaceRecognizer recognizer = ExtractRecognizer();
+        using Mat image1 = BrightSquare(200);
+        using Mat image2 = BrightSquare(190);
+
+        _ = Assert.Throws<ArgumentException>(() =>
+        {
+            _ = recognizer.CompareFacesAsync(image1, image2, detectionThreshold: threshold);
+        });
+    }
+
+    // 異常系: nmsThreshold 範囲外 → ArgumentException(検出前の同期送出。要件 4.7)
+    [Theory]
+    [InlineData(-0.1f)]
+    [InlineData(1.1f)]
+    public void CompareFacesAsync_nmsThreshold範囲外はArgumentException(float threshold)
+    {
+        using FaceRecognizer recognizer = ExtractRecognizer();
+        using Mat image1 = BrightSquare(200);
+        using Mat image2 = BrightSquare(190);
+
+        _ = Assert.Throws<ArgumentException>(() =>
+        {
+            _ = recognizer.CompareFacesAsync(image1, image2, nmsThreshold: threshold);
+        });
+    }
+
+    // 異常系: null 画像 1 → ArgumentNullException(要件 1.6 と同契約)
+    [Fact]
+    public void CompareFacesAsync_null画像1はArgumentNullException()
+    {
+        using FaceRecognizer recognizer = ExtractRecognizer();
+        using Mat image2 = BrightSquare(200);
+
+        _ = Assert.Throws<ArgumentNullException>(() =>
+        {
+            _ = recognizer.CompareFacesAsync(null!, image2);
+        });
+    }
+
+    // 異常系: null 画像 2 → ArgumentNullException(画像 1 が有効でも同期送出)
+    [Fact]
+    public void CompareFacesAsync_null画像2はArgumentNullException()
+    {
+        using FaceRecognizer recognizer = ExtractRecognizer();
+        using Mat image1 = BrightSquare(200);
+
+        _ = Assert.Throws<ArgumentNullException>(() =>
+        {
+            _ = recognizer.CompareFacesAsync(image1, null!);
+        });
+    }
+
+    // 破棄: Dispose 後の CompareFacesAsync 呼び出し → ObjectDisposedException(要件 6.5)
+    [Fact]
+    public void CompareFacesAsync_Dispose後はObjectDisposedException()
+    {
+        FaceRecognizer recognizer = ExtractRecognizer();
+        using Mat image1 = BrightSquare(200);
+        using Mat image2 = BrightSquare(190);
+        recognizer.Dispose();
+
+        _ = Assert.Throws<ObjectDisposedException>(() =>
+        {
+            _ = recognizer.CompareFacesAsync(image1, image2);
+        });
+    }
 }

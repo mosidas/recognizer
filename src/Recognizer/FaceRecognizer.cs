@@ -9,7 +9,7 @@ namespace Recognizer;
 /// <summary>
 /// 顔認証(顔埋め込みの抽出と比較)を提供する公開 API。
 /// 顔検出は <see cref="FaceDetector"/> を内包して再利用し、埋め込みモデルの推論セッションを所有する(design §6)。
-/// CompareFacesAsync と path/bytes オーバーロードは後続タスクで追加する。
+/// path/bytes オーバーロードは後続タスクで追加する。
 /// </summary>
 public sealed class FaceRecognizer : IDisposable
 {
@@ -110,6 +110,70 @@ public sealed class FaceRecognizer : IDisposable
 
         // 浮動小数点誤差で [-1, 1] を僅かに超えうるためクランプする(要件 5.2)。
         return Math.Clamp(similarity, -1f, 1f);
+    }
+
+    /// <summary>
+    /// 2 枚の画像それぞれで最高信頼度の顔の埋め込みを抽出し、コサイン類似度を返す(design §4)。
+    /// 逐次検出(画像 1 → 画像 2・並列化しない。design §10)で、未検出は例外ではなく Status で表す。
+    /// 同一人物か否かの判定は行わない(要件 4.5。返却は類似度のみ)。
+    /// </summary>
+    /// <param name="image1">画像 1(BGR)。所有権は移動しない。</param>
+    /// <param name="image2">画像 2(BGR)。所有権は移動しない。</param>
+    /// <param name="detectionThreshold">顔検出の信頼度閾値(0.0〜1.0)。既定 0.7(要件 4.6)。</param>
+    /// <param name="nmsThreshold">顔検出の NMS IoU 閾値(0.0〜1.0)。既定 0.5(要件 4.6)。</param>
+    /// <param name="cancellationToken">キャンセルトークン。</param>
+    /// <returns>比較結果。双方検出なら Success と類似度、画像 1 未検出なら NoFaceInImage1、画像 2 のみ未検出なら NoFaceInImage2(要件 4.1・4.3・4.4)。</returns>
+    /// <exception cref="ObjectDisposedException">破棄済みインスタンス(要件 6.5)。</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="image1"/> または <paramref name="image2"/> が null(要件 1.6)。</exception>
+    /// <exception cref="ArgumentException">空の Mat、または閾値が範囲外(要件 4.7)。</exception>
+    public Task<FaceComparisonResult> CompareFacesAsync(
+        Mat image1,
+        Mat image2,
+        float detectionThreshold = 0.7f,
+        float nmsThreshold = 0.5f,
+        CancellationToken cancellationToken = default)
+    {
+        // 検出前に事前条件を同期送出する(design §6・§10)。順序: 破棄済み → image1 → image2 → 閾値範囲。
+        ThrowIfDisposed();
+        ImageDecoder.EnsureValid(image1);
+        ImageDecoder.EnsureValid(image2);
+        EnsureThresholdInRange(detectionThreshold, nameof(detectionThreshold));
+        EnsureThresholdInRange(nmsThreshold, nameof(nmsThreshold));
+
+        return CompareFacesCoreAsync(image1, image2, detectionThreshold, nmsThreshold, cancellationToken);
+    }
+
+    // 同期ガード通過後の非同期本体。逐次検出(画像 1 → 画像 2)で、5.3 の抽出本体を 2 画像に流用する(重複実装を避ける。design §4・§10)。
+    private async Task<FaceComparisonResult> CompareFacesCoreAsync(
+        Mat image1,
+        Mat image2,
+        float detectionThreshold,
+        float nmsThreshold,
+        CancellationToken cancellationToken)
+    {
+        // 画像 1: 検出 → 切り出し → 前処理 → 埋め込み。未検出(Embedding=null)は最優先で早期返却する(要件 4.3。両画像未検出でも NoFaceInImage1)。
+        FaceEmbeddingResult first = await ExtractEmbeddingCoreAsync(
+                image1, faceRegion: null, detectionThreshold, nmsThreshold, cancellationToken)
+            .ConfigureAwait(false);
+        if (first.Embedding is null)
+        {
+            // Why not: 画像 1 未検出時は画像 2 を評価しない(逐次・早期返却が評価順。design §10)。Similarity=0・Face1=null。
+            return new FaceComparisonResult(FaceComparisonStatus.NoFaceInImage1, 0f, null, null);
+        }
+
+        // 画像 2: 画像 1 が検出できたときのみ逐次で抽出する(design §10)。
+        FaceEmbeddingResult second = await ExtractEmbeddingCoreAsync(
+                image2, faceRegion: null, detectionThreshold, nmsThreshold, cancellationToken)
+            .ConfigureAwait(false);
+        if (second.Embedding is null)
+        {
+            // 画像 2 のみ未検出。使用した画像 1 の顔は保持し Face2=null・Similarity=0(要件 4.4)。
+            return new FaceComparisonResult(FaceComparisonStatus.NoFaceInImage2, 0f, first.Face, null);
+        }
+
+        // 双方検出。埋め込みのコサイン類似度のみを設定する(要件 4.1・4.2・4.5)。
+        float similarity = CompareEmbeddings(first.Embedding, second.Embedding);
+        return new FaceComparisonResult(FaceComparisonStatus.Success, similarity, first.Face, second.Face);
     }
 
     /// <summary>

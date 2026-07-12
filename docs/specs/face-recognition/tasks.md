@@ -66,7 +66,7 @@
     - 対象ファイル: `src/Recognizer/FaceRecognizer.cs`(変更), `tests/Recognizer.Tests/FaceRecognizerTests.cs`(変更)
     - 設計参照: design.md §4 システムフロー(単画像版)、§6 FaceRecognizer(同期ガード → 検出 → 切り出し → 前処理 → Run)、§8(未検出 → `(null, null)`)
     - 検証コマンド: `dotnet test --filter "FullyQualifiedName~FaceRecognizerTests"`(faceRegion 省略で検出・最高信頼度使用・Face 設定 / faceRegion 指定で検出スキップ・Face=null / 未検出 → Embedding・Face とも null(㉑ 黒画像) / Embedding 長 = 次元数(⑰) / 既定 0.7・0.5 / 閾値範囲外 → ArgumentException(faceRegion 指定時も) / faceRegion 空・非交差 → ArgumentException / Dispose 後の ExtractEmbeddingAsync → ObjectDisposedException(要件 6.5))
-  - [ ] 5.4 CompareFacesAsync(Mat)パイプラインと Status 3 分岐のテストと実装
+  - [x] 5.4 CompareFacesAsync(Mat)パイプラインと Status 3 分岐のテストと実装
         _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7_
         _Boundary: FaceRecognizer_
         _Depends: 5.3, 1.1_
