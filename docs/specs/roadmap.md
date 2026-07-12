@@ -13,7 +13,7 @@
 | # | unit | 内容 | 依存 | 状態 |
 | --- | --- | --- | --- | --- |
 | 1 | `face-detection` | プロジェクト骨格(src/Recognizer、tests/Recognizer.Tests)、共通基盤(3 形式の画像入力、ONNX モデル形式自動判別、前処理、NMS、テスト用ダミー ONNX 方針)、`FaceDetector` / `FaceDetection` / `FaceLandmarks`(api-spec 3.2, 3.3) | なし | 完了(2026-07-12、最終検証 GO) |
-| 2 | `object-detection` | `ObjectDetector` / `ObjectDetection`、クラス単位 NMS、COCO 80 クラス名の既定解決、YOLOv5/v8/v11 出力パース(api-spec 3.5) | 1(共通基盤を再利用) | 未着手 |
+| 2 | `object-detection` | `ObjectDetector` / `ObjectDetection`、クラス単位 NMS、COCO 80 クラス名の既定解決、YOLOv5/v8/v11 出力パース(api-spec 3.5) | 1(共通基盤を再利用) | 完了(2026-07-12、最終検証 GO) |
 | 3 | `face-recognition` | `FaceRecognizer` / `FaceComparisonResult` / `FaceEmbeddingResult` / `FaceComparisonStatus`、顔埋め込みモデル対応、顔領域切り出し(パディング比率 0.2)、コサイン類似度(api-spec 3.4) | 1(`FaceDetector` と共通基盤を利用) | 未着手 |
 
 ## 順序
