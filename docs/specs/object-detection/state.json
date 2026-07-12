@@ -1,0 +1,17 @@
+{
+  "workflow": "sdd",
+  "unit": "object-detection",
+  "state": "completed",
+  "approvals": {
+    "requirements": true,
+    "design": true,
+    "tasks": true
+  },
+  "created": "2026-07-12",
+  "updated": "2026-07-12",
+  "frozen": {
+    "requirements.md": "688e50aa4b9e5b18b10a50a59f540c5ebff6536da5b3ea3f65fbd3abdbe24613",
+    "design.md": "f4abba0ecd81b80bc8e3c0e7845dbee320852a6e7022f3c3784c5c623c6f2d82",
+    "tasks.md": "d7e9ffb6541d0f03140c69ac60c67dbe0c9ab5125561c08c1e965c546ae5fda4"
+  }
+}

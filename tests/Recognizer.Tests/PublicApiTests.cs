@@ -3,18 +3,20 @@ using System.Xml.Linq;
 namespace Recognizer.Tests;
 
 /// <summary>
-/// ライブラリ構成(非機能要件 5.1〜5.4)の契約テスト。
+/// ライブラリ構成(非機能要件 face-detection 5.1〜5.4 / object-detection 6.1〜6.5)の契約テスト。
 /// FaceDetector 個別のインスタンス契約ではなく、アセンブリ/プロジェクトレベルの
 /// 横断的な契約(公開型集合・依存パッケージ・コンソール不使用)を検証するため独立ファイルに置く。
 /// </summary>
 public sealed class PublicApiTests
 {
-    // この unit が公開してよい型(要件 5.1)。名前空間込みで厳密比較する。
+    // 公開してよい型(face-detection 要件 5.1 / object-detection 要件 6.1)。名前空間込みで厳密比較する。
     private static readonly string[] AllowedExportedTypeNames =
     [
         "Recognizer.FaceDetector",
         "Recognizer.FaceDetection",
         "Recognizer.FaceLandmarks",
+        "Recognizer.ObjectDetector",
+        "Recognizer.ObjectDetection",
     ];
 
     // 依存を許可するパッケージ(要件 5.4)。OS 向け runtime パッケージを含む。
@@ -25,9 +27,9 @@ public sealed class PublicApiTests
         "OpenCvSharp4.official.runtime.linux-x64",
     ];
 
-    // 5.1: 公開型は Recognizer 名前空間の 3 型に厳密に限定される。
+    // face-detection 5.1 / object-detection 6.1: 公開型は Recognizer 名前空間の 5 型に厳密に限定される。
     [Fact]
-    public void ExportedTypes_公開型は3型のみ()
+    public void ExportedTypes_公開型は許可された5型のみ()
     {
         Type[] exported = typeof(FaceDetector).Assembly.GetExportedTypes();
 
@@ -46,8 +48,8 @@ public sealed class PublicApiTests
         Assert.All(exported, t => Assert.Equal("Recognizer", t.Namespace));
     }
 
-    // 5.2: 内部実装(前処理・テンソル変換・NMS・出力パース等)は公開されない。
-    // 5.1 の集合比較で担保されるが、internal 化の意図を型名の観点から明示する。
+    // 5.2 / object-detection 6.2: 内部実装(前処理・テンソル変換・NMS・出力パース・クラス名解決等)は公開されない。
+    // 5.1 / 6.1 の集合比較で担保されるが、internal 化の意図を型名の観点から明示する。
     [Fact]
     public void ExportedTypes_内部実装型は非公開()
     {
@@ -62,6 +64,11 @@ public sealed class PublicApiTests
             "ImageDecoder",
             "DetectionModelSpec",
             "TensorLayout",
+            // object-detection 6.2: 物体検出の出力パース・クラス名解決の内部実装。
+            "ObjectOutputParser",
+            "ObjectCandidate",
+            "CocoClassNames",
+            "ObjectOutputSpec",
         ];
 
         Type[] exported = typeof(FaceDetector).Assembly.GetExportedTypes();

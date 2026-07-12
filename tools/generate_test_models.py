@@ -337,6 +337,175 @@ def _finalize(graph, filename: str) -> str:
     return path
 
 
+# ---------------------------------------------------------------------------
+# 物体検出用 fixture(object-detection design.md §9 の ⑫〜⑮)。
+# 特徴ベクトルがクラススコア列を持ち face fixture と構造が異なるため専用 builder を置く。
+# 既存 make_model / CANDIDATES / 追加 fixture のロジックには一切触れないので、
+# 既存 11 fixture のバイト列は不変(生成後に SHA で確認する)。
+#
+# 判別規則(design §6 (o-d)〜(o-g)):N > F(小さい方が F)。転置 [1,F,N] = 4+C(YOLOv8/v11、
+# objectness 無し・信頼度=最大クラススコア)、標準 [1,N,F] = 5+C(YOLOv5、信頼度=objectness×最大クラススコア)。
+# 座標は 640x640 レターボックス空間・中心形式 (cx, cy, w, h)。既定閾値は conf=0.5 / NMS IoU=0.5。
+# 期待結果の正本は tests/Recognizer.Tests/Fixtures/README.md。
+# ---------------------------------------------------------------------------
+
+# 埋め草クラススコア(既定閾値 0.5 未満に確実に収め、フィルタで除外させる)
+_OBJ_FILLER_SCORE = 0.01
+
+
+def _object_row(
+    cx: float,
+    cy: float,
+    w: float,
+    h: float,
+    class_count: int,
+    class_scores: dict[int, float],
+    objectness: float | None = None,
+) -> list[float]:
+    """物体候補 1 件の特徴ベクトルを返す。
+
+    転置(4+C): [cx, cy, w, h, cls_0..cls_{C-1}]
+    標準(5+C): [cx, cy, w, h, objectness, cls_0..cls_{C-1}]
+    class_scores は {クラス添字: スコア} の疎な指定。未指定クラスは _OBJ_FILLER_SCORE で埋める
+    (argmax 検証のため最大でないクラスのスコアも 0 より大きくする)。
+    """
+    scores = [class_scores.get(i, _OBJ_FILLER_SCORE) for i in range(class_count)]
+    head = [float(cx), float(cy), float(w), float(h)]
+    if objectness is not None:
+        head = head + [float(objectness)]
+    return head + scores
+
+
+def _object_filler_row(idx: int, class_count: int, has_objectness: bool) -> list[float]:
+    """閾値で確実に除外される埋め草候補。座標は候補ごとに散らして重複扱いを避ける。"""
+    cx = 10.0 + (idx % 50)
+    cy = 10.0 + (idx % 50)
+    head = [cx, cy, 8.0, 8.0]
+    if has_objectness:
+        head = head + [_OBJ_FILLER_SCORE]
+    return head + [_OBJ_FILLER_SCORE] * class_count
+
+
+# ⑫ object_nchw_transposed_4c3: [1, 7, 60](転置、F=7=4+3、C=3)。信頼度=最大クラススコア。
+#   P0/P1 は同一クラス(class0)の高 IoU ペア(P1 が NMS 抑制)、P2 は P0 と同座標の別クラス
+#   (class1 → 両方残る = 要件 4.2 の核心)、P3 は独立(class2)、P4 は閾値未満で除外。
+OBJECT_T_4C3 = [
+    _object_row(100, 100, 50, 50, 3, {0: 0.90, 1: 0.10, 2: 0.05}),  # P0 class0 conf 0.90
+    _object_row(105, 105, 50, 50, 3, {0: 0.80, 1: 0.05, 2: 0.02}),  # P1 class0 conf 0.80(P0 と IoU≈0.68>0.5 → 抑制)
+    _object_row(100, 100, 50, 50, 3, {0: 0.10, 1: 0.85, 2: 0.05}),  # P2 class1 conf 0.85(P0 と同座標・別クラス → 残る)
+    _object_row(400, 400, 60, 60, 3, {0: 0.05, 1: 0.10, 2: 0.70}),  # P3 class2 conf 0.70 独立
+    _object_row(300, 300, 40, 40, 3, {0: 0.30, 1: 0.20, 2: 0.10}),  # P4 conf 0.30 < 0.5 → 除外
+]
+
+# ⑬ object_nchw_standard_5c3: [1, 60, 8](標準、F=8=5+3、C=3、YOLOv5)。信頼度=objectness×最大クラススコア。
+#   Q2 は積が閾値を跨いで下回る(0.60×0.70=0.42<0.5)候補。
+OBJECT_S_5C3 = [
+    _object_row(100, 100, 50, 50, 3, {0: 0.80, 1: 0.10, 2: 0.05}, objectness=0.90),  # Q0 class0 conf 0.90×0.80=0.72
+    _object_row(400, 200, 70, 70, 3, {0: 0.10, 1: 0.75, 2: 0.05}, objectness=0.80),  # Q1 class1 conf 0.80×0.75=0.60
+    _object_row(500, 500, 50, 50, 3, {0: 0.70, 1: 0.20, 2: 0.05}, objectness=0.60),  # Q2 conf 0.60×0.70=0.42 < 0.5 → 除外
+]
+
+# ⑭ object_transposed_coco80: [1, 84, 100](転置、C=80)。classNames 省略時に COCO 名が解決されることの検証。
+#   ClassId 0=person, 2=car, 15=cat(Ultralytics coco.yaml 順)。
+OBJECT_T_COCO80 = [
+    _object_row(100, 100, 50, 50, 80, {0: 0.95}),   # R0 person(class0) conf 0.95
+    _object_row(300, 300, 80, 80, 80, {2: 0.88}),   # R1 car(class2)    conf 0.88
+    _object_row(500, 200, 60, 60, 80, {15: 0.75}),  # R2 cat(class15)   conf 0.75
+]
+
+
+def make_object_model(
+    filename: str,
+    class_count: int,
+    has_objectness: bool,
+    candidate_count: int,
+    meaningful: list[list[float]],
+    graph_name: str,
+    dynamic_output: bool = False,
+) -> str:
+    """物体用 fixture を 1 つ生成する(入力は NCHW [1,3,640,640] 固定)。
+
+    has_objectness=False → 転置形式 [1, F, N](F=4+C)。
+    has_objectness=True  → 標準形式 [1, N, F](F=5+C)。
+    meaningful を先頭に置き、残りは埋め草で candidate_count 件まで補う。
+    dynamic_output=True → 出力 N 軸を動的入力次元に依存させ、ORT の静的 shape 推論を不能にする
+        (規則 o-g の保留分岐を実行させるため)。宣言形状の N 軸は dim_param("num")。
+    """
+    feature_count = (5 if has_objectness else 4) + class_count
+    rows = list(meaningful)
+    for idx in range(len(meaningful), candidate_count):
+        rows.append(_object_filler_row(idx, class_count, has_objectness))
+    arr = np.array(rows, dtype=np.float32)  # (N, F)
+    assert arr.shape == (candidate_count, feature_count), (
+        f"{filename}: 期待形状 (N,F)=({candidate_count},{feature_count}) 実際 {arr.shape}"
+    )
+    # 標準(5+C)は [1, N, F]、転置(4+C)は [1, F, N]。いずれも N > F(規則 o-d)。
+    if has_objectness:
+        out_data = arr[np.newaxis, :, :]        # (1, N, F)
+        n_axis = 1
+    else:
+        out_data = arr.T[np.newaxis, :, :]      # (1, F, N)
+        n_axis = 2
+    out_data = np.ascontiguousarray(out_data, dtype=np.float32)
+
+    # 宣言形状: dynamic_output なら N 軸を dim_param("num")にし、構築時の分類保留(規則 o-g)を検証可能にする。
+    declared_shape: list = list(out_data.shape)
+    if dynamic_output:
+        declared_shape[n_axis] = "num"
+    output_vi = helper.make_tensor_value_info(
+        "output", TensorProto.FLOAT, declared_shape
+    )
+    # 動的出力 fixture は入力 H/W も動的にする(下記 Why 参照)。IntrospectObject は規則 (c) で 640 に既定化。
+    in_shape = [1, 3, "h", "w"] if dynamic_output else [1, 3, INPUT_H, INPUT_W]
+    input_vi = helper.make_tensor_value_info("images", TensorProto.FLOAT, in_shape)
+    const_out_init = numpy_helper.from_array(out_data, name="const_output")
+    initializers = [const_out_init]
+
+    if not dynamic_output:
+        # zero_scalar は入力を形式的に消費する Mul→ReduceSum 経路でのみ使う。
+        initializers.append(numpy_helper.from_array(np.array(0.0, dtype=np.float32), name="zero_scalar"))
+        consume, reduced = _consume_input_to_scalar("images", "a")
+        nodes = consume + [
+            helper.make_node("Add", ["const_output", reduced], ["output"], name="add1")
+        ]
+    else:
+        # 規則 (o-g) 検証用に出力 N 軸を「ORT が構築時に確定できない」動的軸にする。
+        # Why not 定数由来: ORT は既定の graph 最適化(constant-fold + shape inference)で、
+        # 静的に辿れる出力形状を具体値へ解決してしまう(dim_param 宣言や Reshape でも解決される)。
+        # そこで N 軸長を動的入力次元 h に依存させる: Slice(const_output, ends=h, axes=[2])。
+        # Slice は ends が次元長を超えると clamp するため、実行時 h=640 → [1,7,60](⑫ と同一定数値)。
+        # ends が実行時値(h 由来)なので shape inference は N 軸を未知(-1)のままにする。
+        # 入力は Shape 経由で実消費されるため形式的消費(Mul→ReduceSum)は不要。
+        initializers += [
+            numpy_helper.from_array(np.array([2], dtype=np.int64), name="dyn_h_index"),
+            numpy_helper.from_array(np.array([0], dtype=np.int64), name="dyn_starts"),
+            numpy_helper.from_array(np.array([n_axis], dtype=np.int64), name="dyn_axes"),
+        ]
+        nodes = [
+            helper.make_node("Shape", ["images"], ["dyn_in_shape"], name="dyn_shape"),
+            # 入力 H 軸(index 2、動的 'h')を [1] 形状で取り出す → 実行時 640・構築時 symbolic。
+            helper.make_node(
+                "Gather", ["dyn_in_shape", "dyn_h_index"], ["dyn_ends"], axis=0, name="dyn_gather_h"
+            ),
+            # ends=h(=640)は N 軸長 60 を超えるため clamp され、実行時 [1,7,60]。
+            helper.make_node(
+                "Slice",
+                ["const_output", "dyn_starts", "dyn_ends", "dyn_axes"],
+                ["output"],
+                name="dyn_slice",
+            ),
+        ]
+
+    graph = helper.make_graph(
+        nodes,
+        graph_name,
+        [input_vi],
+        [output_vi],
+        initializer=initializers,
+    )
+    return _finalize(graph, filename)
+
+
 def main() -> None:
     specs = [
         # (ファイル名, layout, F, transposed, dynamic_input)
@@ -374,6 +543,34 @@ def main() -> None:
         size = os.path.getsize(path)
         assert size < 100 * 1024, f"{os.path.basename(path)} が 100 KB 以上: {size} bytes"
         print(f"  生成(追加): {os.path.basename(path)}  ({size} bytes)")
+
+    # 物体用 fixture(object-detection design §9 ⑫〜⑮)。
+    object_specs = [
+        # (ファイル名, C, has_objectness, N, meaningful, graph_name)
+        ("object_nchw_transposed_4c3.onnx", 3, False, 60, OBJECT_T_4C3, "dummy_object_t_4c3"),   # ⑫
+        ("object_nchw_standard_5c3.onnx", 3, True, 60, OBJECT_S_5C3, "dummy_object_s_5c3"),       # ⑬
+        ("object_transposed_coco80.onnx", 80, False, 100, OBJECT_T_COCO80, "dummy_object_coco80"),  # ⑭
+        ("object_unsupported_f4.onnx", 0, False, 60, [], "dummy_object_f4"),                      # ⑮
+    ]
+    for filename, c, has_obj, n, meaningful, graph_name in object_specs:
+        path = make_object_model(filename, c, has_obj, n, meaningful, graph_name)
+        size = os.path.getsize(path)
+        assert size < 100 * 1024, f"{filename} が 100 KB 以上: {size} bytes"
+        f = (5 if has_obj else 4) + c
+        print(f"  生成(物体): {filename}  ({size} bytes)  F={f} C={c} N={n} "
+              f"{'標準 5+C' if has_obj else '転置 4+C'}")
+
+    # ⑯ object_dynamic_output_4c3: 宣言形状 [1, 7, "num"](N 軸が dim_param)。
+    # 構築時は分類を保留し例外を投げずに DetectionModelSpec を返す分岐(規則 o-g)を検証する。
+    # 実行時実形状は [1, 7, 60] で ⑫ と同じ定数出力を流用(転置 4+C=3)。
+    dyn_path = make_object_model(
+        "object_dynamic_output_4c3.onnx", 3, False, 60, OBJECT_T_4C3,
+        "dummy_object_dyn_4c3", dynamic_output=True,
+    )
+    dyn_size = os.path.getsize(dyn_path)
+    assert dyn_size < 100 * 1024, f"object_dynamic_output_4c3.onnx が 100 KB 以上: {dyn_size} bytes"
+    print(f"  生成(物体・動的出力): object_dynamic_output_4c3.onnx  ({dyn_size} bytes)  "
+          f"宣言 [1,7,'num'] 実形状 [1,7,60]")
 
     print("全 fixture の生成と onnx.checker 検証が完了しました。")
 
