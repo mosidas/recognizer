@@ -38,7 +38,7 @@
     - 検証コマンド: `dotnet build`
 
 - [ ] 4. ObjectDetector 骨格
-  - [ ] 4.1 ObjectDetection record とコンストラクタ(ガード・物体用判別・classNames 保持)・Dispose のテストと実装
+  - [x] 4.1 ObjectDetection record とコンストラクタ(ガード・物体用判別・classNames 保持)・Dispose のテストと実装
         _Requirements: 2.1, 2.6, 2.7, 2.8, 2.9, 5.4_
         _Boundary: ObjectDetector_
         _Depends: 1.1, 2.1_
@@ -94,3 +94,4 @@
 - 物体 fixture(1.1)の期待値(正本は Fixtures/README.md): ⑫ P0(class0,0.90)→P2(class1,0.85,P0と同座標・別クラスで両残)→P3(class2,0.70) の 3 件。P1 は P0 と IoU≈0.68 で同クラス抑制、P4(0.30)は閾値除外。⑬ Q0(0.9×0.8=0.72,class0)→Q1(0.8×0.75=0.60,class1)、Q2(0.42)除外。⑭ person(0.95)→car(0.88)→cat(0.75)(ClassId 0/2/15)。⑮ F=4 で NotSupported。float32 丸めのため許容誤差比較を推奨。
 - ModelIntrospector 追加 API(2.1): `IntrospectObject(InferenceSession)` → `DetectionModelSpec`(動的出力は分類保留)。`ClassifyObjectOutput(ReadOnlySpan<int>)` → `ObjectOutputSpec(Format, FeatureCount, CandidateCount, ClassCount, HasObjectness)`(転置=C=F−4/objectness なし、標準=C=F−5/あり)。初回 Run 実形状の確定は呼び出し側。fixture ⑯ object_dynamic_output_4c3(動的出力軸。実形状 [1,7,60]、定数は ⑫ と同一)。
 - 教訓(2.1): 定数出力グラフは ORT の shape inference で出力形状が静的解決される。動的出力メタデータが要る fixture は出力軸を動的入力次元に依存させる(Slice + Shape/Gather)。
+- 4.1 で PublicApiTests の期待集合(3 型→5 型)を前倒し更新した(トランクを green に保つため。6.1 の残作業は内部型検査の追加と最終非回帰確認)。ObjectDetector フィールド: _session / _modelSpec / _classNames(非防御コピー)/ _disposed。

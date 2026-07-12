@@ -9,12 +9,14 @@ namespace Recognizer.Tests;
 /// </summary>
 public sealed class PublicApiTests
 {
-    // この unit が公開してよい型(要件 5.1)。名前空間込みで厳密比較する。
+    // 公開してよい型(face-detection 要件 5.1 / object-detection 要件 6.1)。名前空間込みで厳密比較する。
     private static readonly string[] AllowedExportedTypeNames =
     [
         "Recognizer.FaceDetector",
         "Recognizer.FaceDetection",
         "Recognizer.FaceLandmarks",
+        "Recognizer.ObjectDetector",
+        "Recognizer.ObjectDetection",
     ];
 
     // 依存を許可するパッケージ(要件 5.4)。OS 向け runtime パッケージを含む。
