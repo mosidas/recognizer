@@ -9,6 +9,7 @@ YOLO 形式の ONNX モデルファイルで動作する、顔検出・顔認証
 `workspaces/face-recognition` の `src/Recognizer` の作り直しであり、旧実装の機能のうち以下をスコープ外とする。
 
 - 顔の角度計算(roll / pitch / yaw)
+- 同一人物か否かの閾値判定(ライブラリはコサイン類似度を返し、判定は呼び出し側の責務とする)
 - YOLOv3 形式(3 出力テンソル)のモデル対応
 - モデルファイル名によるクラス名リストの自動選択(Open Images 等)
 - `FaceDatabase` による 1:N 識別(埋め込み抽出 API の組み合わせで呼び出し側が実現できる)
@@ -33,6 +34,7 @@ YOLO 形式の ONNX モデルファイルで動作する、顔検出・顔認証
   - `OpenCvSharp.Mat`(BGR)
   - `string imagePath`(ファイルパス。画像フォーマットは OpenCV が自動判別)
   - `ReadOnlyMemory<byte>`(エンコード済み画像バイト列。フォーマットは OpenCV が自動判別)
+- 検出の信頼度閾値(`confidenceThreshold` / `detectionThreshold`)と NMS 閾値(`nmsThreshold`)は、コンストラクタではなく各メソッドの引数で指定する。いずれも省略可とし、既定値を持つ。
 - 座標系は入力画像のピクセル座標(左上原点)。`System.Drawing.RectangleF` / `System.Drawing.PointF` を使用する。
 - すべての非同期メソッドは `CancellationToken`(省略可、既定 `default`)を受け取る。
 - 推論セッションを保持する公開クラスは `IDisposable` を実装する。
@@ -54,17 +56,15 @@ YOLO 形式の ONNX モデルファイルで動作する、顔検出・顔認証
 ```csharp
 public sealed class FaceDetector : IDisposable
 {
-    public FaceDetector(string modelPath, FaceDetectorOptions? options = null);
+    public FaceDetector(string modelPath);
 
-    public Task<IReadOnlyList<FaceDetection>> DetectAsync(Mat image, CancellationToken cancellationToken = default);
-    public Task<IReadOnlyList<FaceDetection>> DetectAsync(string imagePath, CancellationToken cancellationToken = default);
-    public Task<IReadOnlyList<FaceDetection>> DetectAsync(ReadOnlyMemory<byte> encodedImage, CancellationToken cancellationToken = default);
-}
+    public Task<IReadOnlyList<FaceDetection>> DetectAsync(
+        Mat image,
+        float confidenceThreshold = 0.7f,
+        float nmsThreshold = 0.5f,
+        CancellationToken cancellationToken = default);
 
-public sealed record FaceDetectorOptions
-{
-    public float ConfidenceThreshold { get; init; } = 0.7f;
-    public float NmsThreshold { get; init; } = 0.5f;
+    // string imagePath / ReadOnlyMemory<byte> encodedImage の同形オーバーロードを持つ
 }
 
 public sealed record FaceDetection(RectangleF BBox, float Confidence, FaceLandmarks? Landmarks);
@@ -80,51 +80,50 @@ public sealed record FaceLandmarks(PointF LeftEye, PointF RightEye, PointF Nose,
 ```csharp
 public sealed class FaceRecognizer : IDisposable
 {
-    public FaceRecognizer(string detectorModelPath, string embeddingModelPath, FaceRecognizerOptions? options = null);
+    public FaceRecognizer(string detectorModelPath, string embeddingModelPath);
 
-    // 1:1 照合(各画像で最高信頼度の顔を使用)
-    public Task<FaceVerificationResult> VerifyAsync(Mat image1, Mat image2, CancellationToken cancellationToken = default);
-    public Task<FaceVerificationResult> VerifyAsync(string imagePath1, string imagePath2, CancellationToken cancellationToken = default);
-    public Task<FaceVerificationResult> VerifyAsync(ReadOnlyMemory<byte> encodedImage1, ReadOnlyMemory<byte> encodedImage2, CancellationToken cancellationToken = default);
+    // 2 画像それぞれで最高信頼度の顔の埋め込みを抽出し、コサイン類似度を返す。
+    // 同一人物か否かの判定はしない
+    public Task<FaceComparisonResult> CompareFacesAsync(
+        Mat image1,
+        Mat image2,
+        float detectionThreshold = 0.7f,
+        float nmsThreshold = 0.5f,
+        CancellationToken cancellationToken = default);
 
     // 埋め込み抽出(faceRegion 省略時は顔検出して最高信頼度の顔を使用)
-    public Task<FaceEmbeddingResult> ExtractEmbeddingAsync(Mat image, RectangleF? faceRegion = null, CancellationToken cancellationToken = default);
-    public Task<FaceEmbeddingResult> ExtractEmbeddingAsync(string imagePath, RectangleF? faceRegion = null, CancellationToken cancellationToken = default);
-    public Task<FaceEmbeddingResult> ExtractEmbeddingAsync(ReadOnlyMemory<byte> encodedImage, RectangleF? faceRegion = null, CancellationToken cancellationToken = default);
+    public Task<FaceEmbeddingResult> ExtractEmbeddingAsync(
+        Mat image,
+        RectangleF? faceRegion = null,
+        float detectionThreshold = 0.7f,
+        float nmsThreshold = 0.5f,
+        CancellationToken cancellationToken = default);
+
+    // string imagePath / ReadOnlyMemory<byte> encodedImage の同形オーバーロードを持つ
 
     // コサイン類似度 [-1, 1]
     public static float CompareEmbeddings(ReadOnlySpan<float> embedding1, ReadOnlySpan<float> embedding2);
 }
 
-public sealed record FaceRecognizerOptions
+public enum FaceComparisonStatus
 {
-    public float DetectionThreshold { get; init; } = 0.7f;
-    public float RecognitionThreshold { get; init; } = 0.6f;
-    public float NmsThreshold { get; init; } = 0.5f;
-}
-
-public enum FaceVerificationStatus
-{
-    Match,          // 同一人物と判定
-    NoMatch,        // 別人と判定
+    Success,        // 両画像で顔を検出し、類似度を算出した
     NoFaceInImage1, // 画像 1 で顔未検出
     NoFaceInImage2  // 画像 2 で顔未検出
 }
 
-public sealed record FaceVerificationResult(
-    FaceVerificationStatus Status,
-    float Similarity,          // 顔未検出時は 0
+public sealed record FaceComparisonResult(
+    FaceComparisonStatus Status,
+    float Similarity,          // コサイン類似度 [-1, 1]。顔未検出時は 0
     FaceDetection? Face1,      // 画像 1 で使用した顔(未検出時は null)
-    FaceDetection? Face2)      // 画像 2 で使用した顔(未検出時は null)
-{
-    public bool IsMatch => Status == FaceVerificationStatus.Match;
-}
+    FaceDetection? Face2);     // 画像 2 で使用した顔(未検出時は null)
 
 public sealed record FaceEmbeddingResult(
     float[]? Embedding,        // 顔未検出時は null
     FaceDetection? Face);      // 使用した顔(faceRegion 指定時・未検出時は null)
 ```
 
+- 顔認証は判定結果(同一人物か否か)を返さず、コサイン類似度を返す。閾値判定は呼び出し側の責務とする。
 - 顔未検出は予期されるエラーであり、例外ではなく結果型(`Status` / `null`)で表現する。
 - 埋め込み抽出時の顔領域切り出しは、周辺情報を含む正方形(パディング比率 0.2)で行う(旧実装と同等)。
 - `CompareEmbeddings` は次元不一致のとき `ArgumentException` を送出する。
@@ -134,21 +133,17 @@ public sealed record FaceEmbeddingResult(
 ```csharp
 public sealed class ObjectDetector : IDisposable
 {
-    public ObjectDetector(string modelPath, ObjectDetectorOptions? options = null);
-
-    public Task<IReadOnlyList<ObjectDetection>> DetectAsync(Mat image, CancellationToken cancellationToken = default);
-    public Task<IReadOnlyList<ObjectDetection>> DetectAsync(string imagePath, CancellationToken cancellationToken = default);
-    public Task<IReadOnlyList<ObjectDetection>> DetectAsync(ReadOnlyMemory<byte> encodedImage, CancellationToken cancellationToken = default);
-}
-
-public sealed record ObjectDetectorOptions
-{
-    public float ConfidenceThreshold { get; init; } = 0.5f;
-    public float NmsThreshold { get; init; } = 0.5f;
-
-    // 省略時: クラス数がモデル出力から 80 と判別できれば COCO 80 クラス名、
+    // classNames 省略時: クラス数がモデル出力から 80 と判別できれば COCO 80 クラス名、
     // それ以外は "class_{id}" を返す
-    public IReadOnlyList<string>? ClassNames { get; init; }
+    public ObjectDetector(string modelPath, IReadOnlyList<string>? classNames = null);
+
+    public Task<IReadOnlyList<ObjectDetection>> DetectAsync(
+        Mat image,
+        float confidenceThreshold = 0.5f,
+        float nmsThreshold = 0.5f,
+        CancellationToken cancellationToken = default);
+
+    // string imagePath / ReadOnlyMemory<byte> encodedImage の同形オーバーロードを持つ
 }
 
 public sealed record ObjectDetection(int ClassId, string ClassName, float Confidence, RectangleF BBox);
@@ -165,7 +160,7 @@ public sealed record ObjectDetection(int ClassId, string ClassName, float Confid
 | モデルファイルが存在しない・ロード失敗 | 例外(OnnxRuntime の例外をそのまま、またはファイル存在チェックの `FileNotFoundException`) |
 | 画像のロード失敗(パス不正・デコード不可) | `ArgumentException` |
 | 非対応のモデル形式 | `NotSupportedException` |
-| 引数不正(空の `Mat`、次元不一致等) | `ArgumentException` |
+| 引数不正(空の `Mat`、次元不一致、閾値の範囲外等) | `ArgumentException` |
 
 ## 4. リポジトリ構成
 
