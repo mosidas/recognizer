@@ -9,7 +9,7 @@ namespace Recognizer;
 /// <summary>
 /// 顔認証(顔埋め込みの抽出と比較)を提供する公開 API。
 /// 顔検出は <see cref="FaceDetector"/> を内包して再利用し、埋め込みモデルの推論セッションを所有する(design §6)。
-/// path/bytes オーバーロードは後続タスクで追加する。
+/// ファイルパス / エンコード済みバイト列オーバーロードは <see cref="ImageDecoder"/> で Mat 化して Mat 版へ委譲する(design §6)。
 /// </summary>
 public sealed class FaceRecognizer : IDisposable
 {
@@ -143,6 +143,97 @@ public sealed class FaceRecognizer : IDisposable
         return CompareFacesCoreAsync(image1, image2, detectionThreshold, nmsThreshold, cancellationToken);
     }
 
+    /// <summary>
+    /// 2 つのファイルパスから画像を読み込んで顔を比較する。フォーマットは OpenCV が自動判別し、Mat 版と同一契約で処理する(要件 1.2)。
+    /// </summary>
+    /// <param name="imagePath1">画像 1 のファイルパス。</param>
+    /// <param name="imagePath2">画像 2 のファイルパス。</param>
+    /// <param name="detectionThreshold">顔検出の信頼度閾値(0.0〜1.0)。既定 0.7(要件 4.6)。</param>
+    /// <param name="nmsThreshold">顔検出の NMS IoU 閾値(0.0〜1.0)。既定 0.5(要件 4.6)。</param>
+    /// <param name="cancellationToken">キャンセルトークン。</param>
+    /// <exception cref="ObjectDisposedException">破棄済みインスタンス(要件 6.5)。</exception>
+    /// <exception cref="ArgumentNullException">いずれかのパスが null(要件 1.6)。</exception>
+    /// <exception cref="ArgumentException">いずれかのパスが存在しない・画像としてデコードできない、または閾値が範囲外(要件 1.4, 4.7)。</exception>
+    public Task<FaceComparisonResult> CompareFacesAsync(
+        string imagePath1,
+        string imagePath2,
+        float detectionThreshold = 0.7f,
+        float nmsThreshold = 0.5f,
+        CancellationToken cancellationToken = default)
+    {
+        // null ガード・デコードは両画像とも同期(design §5 の 1.6: image2 も呼び出し時点で検証)。存在しない・非画像パスは呼び出し時点で ArgumentException。
+        ArgumentNullException.ThrowIfNull(imagePath1);
+        ArgumentNullException.ThrowIfNull(imagePath2);
+
+        Mat image1 = ImageDecoder.DecodeFile(imagePath1);
+        try
+        {
+            Mat image2 = ImageDecoder.DecodeFile(imagePath2);
+            return CompareFacesOwnedAsync(image1, image2, detectionThreshold, nmsThreshold, cancellationToken);
+        }
+        catch
+        {
+            // Why not: 画像 2 のデコード失敗時に、先に所有した画像 1 の Mat をリークさせないため破棄して再送出する。
+            image1.Dispose();
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// 2 つのエンコード済みバイト列をデコードして顔を比較する。フォーマットは OpenCV が自動判別し、Mat 版と同一契約で処理する(要件 1.3)。
+    /// </summary>
+    /// <param name="encodedImage1">画像 1 のエンコード済みバイト列。</param>
+    /// <param name="encodedImage2">画像 2 のエンコード済みバイト列。</param>
+    /// <param name="detectionThreshold">顔検出の信頼度閾値(0.0〜1.0)。既定 0.7(要件 4.6)。</param>
+    /// <param name="nmsThreshold">顔検出の NMS IoU 閾値(0.0〜1.0)。既定 0.5(要件 4.6)。</param>
+    /// <param name="cancellationToken">キャンセルトークン。</param>
+    /// <exception cref="ObjectDisposedException">破棄済みインスタンス(要件 6.5)。</exception>
+    /// <exception cref="ArgumentException">いずれかのバイト列が空・画像としてデコードできない、または閾値が範囲外(要件 1.4, 4.7)。</exception>
+    public Task<FaceComparisonResult> CompareFacesAsync(
+        ReadOnlyMemory<byte> encodedImage1,
+        ReadOnlyMemory<byte> encodedImage2,
+        float detectionThreshold = 0.7f,
+        float nmsThreshold = 0.5f,
+        CancellationToken cancellationToken = default)
+    {
+        // デコードは両画像とも同期(design §5 の 1.6: image2 も呼び出し時点で検証)。空・非画像は呼び出し時点で ArgumentException。
+        Mat image1 = ImageDecoder.DecodeBytes(encodedImage1);
+        try
+        {
+            Mat image2 = ImageDecoder.DecodeBytes(encodedImage2);
+            return CompareFacesOwnedAsync(image1, image2, detectionThreshold, nmsThreshold, cancellationToken);
+        }
+        catch
+        {
+            image1.Dispose();
+            throw;
+        }
+    }
+
+    // デコード済み 2 Mat の所有権を引き取り、Mat 版へ委譲する。破棄済み・閾値ガードは Mat 版に一元化し重複させない(FaceDetector と同一パターン)。
+    private Task<FaceComparisonResult> CompareFacesOwnedAsync(
+        Mat image1,
+        Mat image2,
+        float detectionThreshold,
+        float nmsThreshold,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            // Why not: Mat 版の同期ガード(破棄済み・空 Mat・閾値範囲外)が委譲時点で送出されるため、オーバーロードでも「呼び出し時点の同期送出」が維持される。
+            Task<FaceComparisonResult> pipeline =
+                CompareFacesAsync(image1, image2, detectionThreshold, nmsThreshold, cancellationToken);
+            return AwaitAndDisposeAsync(pipeline, image1, image2);
+        }
+        catch
+        {
+            // Why not: Mat 版の同期ガード違反時に、このメソッドが所有する 2 Mat をリークさせないため破棄して再送出する。
+            image1.Dispose();
+            image2.Dispose();
+            throw;
+        }
+    }
+
     // 同期ガード通過後の非同期本体。逐次検出(画像 1 → 画像 2)で、5.3 の抽出本体を 2 画像に流用する(重複実装を避ける。design §4・§10)。
     private async Task<FaceComparisonResult> CompareFacesCoreAsync(
         Mat image1,
@@ -209,6 +300,95 @@ public sealed class FaceRecognizer : IDisposable
         }
 
         return ExtractEmbeddingCoreAsync(image, faceRegion, detectionThreshold, nmsThreshold, cancellationToken);
+    }
+
+    /// <summary>
+    /// ファイルパスから画像を読み込んで顔埋め込みを抽出する。フォーマットは OpenCV が自動判別し、Mat 版と同一契約で処理する(要件 1.2)。
+    /// </summary>
+    /// <param name="imagePath">画像ファイルのパス。</param>
+    /// <param name="faceRegion">埋め込み対象の顔領域。省略時は検出結果の最高信頼度の顔を使う。</param>
+    /// <param name="detectionThreshold">顔検出の信頼度閾値(0.0〜1.0)。faceRegion 省略時のみ検出に使用。</param>
+    /// <param name="nmsThreshold">顔検出の NMS IoU 閾値(0.0〜1.0)。faceRegion 省略時のみ検出に使用。</param>
+    /// <param name="cancellationToken">キャンセルトークン。</param>
+    /// <exception cref="ObjectDisposedException">破棄済みインスタンス(要件 6.5)。</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="imagePath"/> が null(要件 1.6)。</exception>
+    /// <exception cref="ArgumentException">パスが存在しない・画像としてデコードできない、閾値が範囲外(要件 1.4, 3.9)、または faceRegion が空・非交差(要件 3.7)。</exception>
+    public Task<FaceEmbeddingResult> ExtractEmbeddingAsync(
+        string imagePath,
+        RectangleF? faceRegion = null,
+        float detectionThreshold = 0.7f,
+        float nmsThreshold = 0.5f,
+        CancellationToken cancellationToken = default)
+    {
+        // null ガードは同期(design §6 事前条件)。存在しない・非画像パスは呼び出し時点で ArgumentException(要件 1.4)。
+        ArgumentNullException.ThrowIfNull(imagePath);
+
+        Mat image = ImageDecoder.DecodeFile(imagePath);
+        return ExtractEmbeddingOwnedAsync(image, faceRegion, detectionThreshold, nmsThreshold, cancellationToken);
+    }
+
+    /// <summary>
+    /// エンコード済みバイト列をデコードして顔埋め込みを抽出する。フォーマットは OpenCV が自動判別し、Mat 版と同一契約で処理する(要件 1.3)。
+    /// </summary>
+    /// <param name="encodedImage">エンコード済み画像バイト列。</param>
+    /// <param name="faceRegion">埋め込み対象の顔領域。省略時は検出結果の最高信頼度の顔を使う。</param>
+    /// <param name="detectionThreshold">顔検出の信頼度閾値(0.0〜1.0)。faceRegion 省略時のみ検出に使用。</param>
+    /// <param name="nmsThreshold">顔検出の NMS IoU 閾値(0.0〜1.0)。faceRegion 省略時のみ検出に使用。</param>
+    /// <param name="cancellationToken">キャンセルトークン。</param>
+    /// <exception cref="ObjectDisposedException">破棄済みインスタンス(要件 6.5)。</exception>
+    /// <exception cref="ArgumentException">バイト列が空・画像としてデコードできない、閾値が範囲外(要件 1.4, 3.9)、または faceRegion が空・非交差(要件 3.7)。</exception>
+    public Task<FaceEmbeddingResult> ExtractEmbeddingAsync(
+        ReadOnlyMemory<byte> encodedImage,
+        RectangleF? faceRegion = null,
+        float detectionThreshold = 0.7f,
+        float nmsThreshold = 0.5f,
+        CancellationToken cancellationToken = default)
+    {
+        // 空・非画像バイト列は呼び出し時点で ArgumentException(要件 1.4)。
+        Mat image = ImageDecoder.DecodeBytes(encodedImage);
+        return ExtractEmbeddingOwnedAsync(image, faceRegion, detectionThreshold, nmsThreshold, cancellationToken);
+    }
+
+    // デコード済み Mat の所有権を引き取り、Mat 版へ委譲する。破棄済み・閾値・faceRegion ガードは Mat 版に一元化し重複させない(FaceDetector と同一パターン)。
+    private Task<FaceEmbeddingResult> ExtractEmbeddingOwnedAsync(
+        Mat image,
+        RectangleF? faceRegion,
+        float detectionThreshold,
+        float nmsThreshold,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            // Why not: Mat 版の同期ガード(破棄済み・空 Mat・閾値範囲外・faceRegion 妥当性)が委譲時点で送出されるため、オーバーロードでも同期送出が維持される。
+            Task<FaceEmbeddingResult> pipeline =
+                ExtractEmbeddingAsync(image, faceRegion, detectionThreshold, nmsThreshold, cancellationToken);
+            return AwaitAndDisposeAsync(pipeline, image);
+        }
+        catch
+        {
+            // Why not: Mat 版の同期ガード違反時に、このメソッドが所有する Mat をリークさせないため破棄して再送出する。
+            image.Dispose();
+            throw;
+        }
+    }
+
+    // 所有 Mat を委譲先の完了後(正常・例外・キャンセルのいずれでも)に確実に破棄する(FaceDetector.AwaitAndDisposeAsync と同一方針)。
+    private static async Task<T> AwaitAndDisposeAsync<T>(Task<T> pipeline, Mat image)
+    {
+        using (image)
+        {
+            return await pipeline.ConfigureAwait(false);
+        }
+    }
+
+    // 所有する 2 Mat を委譲先の完了後に確実に破棄する(CompareFaces オーバーロード用)。
+    private static async Task<T> AwaitAndDisposeAsync<T>(Task<T> pipeline, Mat image1, Mat image2)
+    {
+        using (image1)
+        using (image2)
+        {
+            return await pipeline.ConfigureAwait(false);
+        }
     }
 
     // 同期ガード通過後の非同期本体。検出(省略時)→ 未検出の早期返却 → Task.Run 内で切り出し・前処理・推論(design §6)。

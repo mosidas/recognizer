@@ -374,7 +374,8 @@ public sealed class FaceRecognizerTests
 
         _ = Assert.Throws<ArgumentNullException>(() =>
         {
-            _ = recognizer.ExtractEmbeddingAsync(null!);
+            // Mat 版オーバーロードを明示(string 版追加で null! が曖昧になるため)。
+            _ = recognizer.ExtractEmbeddingAsync((Mat)null!);
         });
     }
 
@@ -550,6 +551,278 @@ public sealed class FaceRecognizerTests
         _ = Assert.Throws<ObjectDisposedException>(() =>
         {
             _ = recognizer.CompareFacesAsync(image1, image2);
+        });
+    }
+
+    // --- 画像入力 3 形式オーバーロード(パス string / バイト列 ReadOnlyMemory<byte>)(タスク 5.5) ---
+    // 各オーバーロードは ImageDecoder で Mat 化して Mat 版へ委譲する薄いラッパ。結果が Mat 版と一致すること・
+    // 入力ガード(null/空/デコード不可)を検証する(要件 1.1〜1.6)。
+
+    // Mat を PNG(可逆)でエンコードしたバイト列。JPEG は非可逆で埋め込み値が一致しないため PNG を用いる。
+    private static ReadOnlyMemory<byte> EncodePng(Mat image)
+    {
+        Assert.True(Cv2.ImEncode(".png", image, out byte[] buffer));
+        return buffer;
+    }
+
+    // Mat を一時 PNG ファイルへ書き出し、パスを返す。呼び出し側が使用後に削除する。
+    private static string WriteTempPng(Mat image)
+    {
+        string path = Path.Combine(Path.GetTempPath(), $"facerec_{Guid.NewGuid():N}.png");
+        Assert.True(Cv2.ImWrite(path, image));
+        return path;
+    }
+
+    // 正常系(要件 1.2): ExtractEmbeddingAsync のパス版が Mat 版と同一の埋め込みを返す(検出パス経由)。
+    [Fact]
+    public async Task ExtractEmbeddingAsync_パス版がMat版と一致する()
+    {
+        using FaceRecognizer recognizer = ExtractRecognizer();
+        using Mat image = WhiteSquare();
+        string path = WriteTempPng(image);
+        try
+        {
+            FaceEmbeddingResult expected = await recognizer.ExtractEmbeddingAsync(image);
+            FaceEmbeddingResult actual = await recognizer.ExtractEmbeddingAsync(path);
+
+            Assert.NotNull(expected.Embedding);
+            Assert.NotNull(actual.Embedding);
+            Assert.Equal(expected.Embedding!, actual.Embedding!);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    // 正常系(要件 1.3): ExtractEmbeddingAsync のバイト列版が Mat 版と同一の埋め込みを返す。
+    [Fact]
+    public async Task ExtractEmbeddingAsync_バイト列版がMat版と一致する()
+    {
+        using FaceRecognizer recognizer = ExtractRecognizer();
+        using Mat image = WhiteSquare();
+        ReadOnlyMemory<byte> bytes = EncodePng(image);
+
+        FaceEmbeddingResult expected = await recognizer.ExtractEmbeddingAsync(image);
+        FaceEmbeddingResult actual = await recognizer.ExtractEmbeddingAsync(bytes);
+
+        Assert.NotNull(expected.Embedding);
+        Assert.NotNull(actual.Embedding);
+        Assert.Equal(expected.Embedding!, actual.Embedding!);
+    }
+
+    // 正常系(要件 1.2): CompareFacesAsync のパス版が Mat 版と同一の Status/Similarity を返す。
+    [Fact]
+    public async Task CompareFacesAsync_パス版がMat版と一致する()
+    {
+        using FaceRecognizer recognizer = ExtractRecognizer();
+        using Mat image1 = BrightSquare(200);
+        using Mat image2 = BrightSquare(190);
+        string path1 = WriteTempPng(image1);
+        string path2 = WriteTempPng(image2);
+        try
+        {
+            FaceComparisonResult expected = await recognizer.CompareFacesAsync(image1, image2);
+            FaceComparisonResult actual = await recognizer.CompareFacesAsync(path1, path2);
+
+            Assert.Equal(expected.Status, actual.Status);
+            Assert.Equal(expected.Similarity, actual.Similarity, Epsilon);
+        }
+        finally
+        {
+            File.Delete(path1);
+            File.Delete(path2);
+        }
+    }
+
+    // 正常系(要件 1.3): CompareFacesAsync のバイト列版が Mat 版と同一の Status/Similarity を返す。
+    [Fact]
+    public async Task CompareFacesAsync_バイト列版がMat版と一致する()
+    {
+        using FaceRecognizer recognizer = ExtractRecognizer();
+        using Mat image1 = BrightSquare(200);
+        using Mat image2 = BrightSquare(190);
+        ReadOnlyMemory<byte> bytes1 = EncodePng(image1);
+        ReadOnlyMemory<byte> bytes2 = EncodePng(image2);
+
+        FaceComparisonResult expected = await recognizer.CompareFacesAsync(image1, image2);
+        FaceComparisonResult actual = await recognizer.CompareFacesAsync(bytes1, bytes2);
+
+        Assert.Equal(expected.Status, actual.Status);
+        Assert.Equal(expected.Similarity, actual.Similarity, Epsilon);
+    }
+
+    // 異常系(要件 1.4): 存在しないパスは ArgumentException(ExtractEmbeddingAsync)。
+    [Fact]
+    public void ExtractEmbeddingAsync_存在しないパスはArgumentException()
+    {
+        using FaceRecognizer recognizer = ExtractRecognizer();
+        string missing = FixturePath("does_not_exist.png");
+
+        _ = Assert.Throws<ArgumentException>(() =>
+        {
+            _ = recognizer.ExtractEmbeddingAsync(missing);
+        });
+    }
+
+    // 異常系(要件 1.4): デコード不可のバイト列は ArgumentException(ExtractEmbeddingAsync)。
+    [Fact]
+    public void ExtractEmbeddingAsync_デコード不可バイト列はArgumentException()
+    {
+        using FaceRecognizer recognizer = ExtractRecognizer();
+        ReadOnlyMemory<byte> garbage = new byte[] { 1, 2, 3, 4 };
+
+        _ = Assert.Throws<ArgumentException>(() =>
+        {
+            _ = recognizer.ExtractEmbeddingAsync(garbage);
+        });
+    }
+
+    // 異常系(要件 1.6): null パスは ArgumentNullException(ExtractEmbeddingAsync)。
+    [Fact]
+    public void ExtractEmbeddingAsync_nullパスはArgumentNullException()
+    {
+        using FaceRecognizer recognizer = ExtractRecognizer();
+
+        _ = Assert.Throws<ArgumentNullException>(() =>
+        {
+            _ = recognizer.ExtractEmbeddingAsync((string)null!);
+        });
+    }
+
+    // 異常系(要件 1.5): 空 Mat(要素数 0)は ArgumentException(Mat 版・呼び出し時点で同期送出)。
+    [Fact]
+    public void ExtractEmbeddingAsync_空MatはArgumentException()
+    {
+        using FaceRecognizer recognizer = ExtractRecognizer();
+        using Mat empty = new();
+
+        _ = Assert.Throws<ArgumentException>(() =>
+        {
+            _ = recognizer.ExtractEmbeddingAsync(empty);
+        });
+    }
+
+    // 異常系(要件 1.4): 存在しないパスは ArgumentException(CompareFacesAsync・image1 / image2 の各々)。
+    [Fact]
+    public void CompareFacesAsync_存在しないパス1はArgumentException()
+    {
+        using FaceRecognizer recognizer = ExtractRecognizer();
+        using Mat image2 = BrightSquare(200);
+        string valid2 = WriteTempPng(image2);
+        try
+        {
+            _ = Assert.Throws<ArgumentException>(() =>
+            {
+                _ = recognizer.CompareFacesAsync(FixturePath("does_not_exist.png"), valid2);
+            });
+        }
+        finally
+        {
+            File.Delete(valid2);
+        }
+    }
+
+    // 異常系(要件 1.4): 画像 1 が有効でも画像 2 が存在しないパスなら ArgumentException(image2 も呼び出し時点で同期検証。design §5 の 1.6)。
+    [Fact]
+    public void CompareFacesAsync_存在しないパス2はArgumentException()
+    {
+        using FaceRecognizer recognizer = ExtractRecognizer();
+        using Mat image1 = BrightSquare(200);
+        string valid1 = WriteTempPng(image1);
+        try
+        {
+            _ = Assert.Throws<ArgumentException>(() =>
+            {
+                _ = recognizer.CompareFacesAsync(valid1, FixturePath("does_not_exist.png"));
+            });
+        }
+        finally
+        {
+            File.Delete(valid1);
+        }
+    }
+
+    // 異常系(要件 1.4): デコード不可のバイト列は ArgumentException(CompareFacesAsync)。
+    [Fact]
+    public void CompareFacesAsync_デコード不可バイト列はArgumentException()
+    {
+        using FaceRecognizer recognizer = ExtractRecognizer();
+        using Mat image2 = BrightSquare(200);
+        ReadOnlyMemory<byte> garbage = new byte[] { 1, 2, 3, 4 };
+        ReadOnlyMemory<byte> valid2 = EncodePng(image2);
+
+        _ = Assert.Throws<ArgumentException>(() =>
+        {
+            _ = recognizer.CompareFacesAsync(garbage, valid2);
+        });
+    }
+
+    // 異常系(要件 1.6): null パス 1 は ArgumentNullException(CompareFacesAsync)。
+    [Fact]
+    public void CompareFacesAsync_nullパス1はArgumentNullException()
+    {
+        using FaceRecognizer recognizer = ExtractRecognizer();
+        using Mat image2 = BrightSquare(200);
+        string valid2 = WriteTempPng(image2);
+        try
+        {
+            _ = Assert.Throws<ArgumentNullException>(() =>
+            {
+                _ = recognizer.CompareFacesAsync(null!, valid2);
+            });
+        }
+        finally
+        {
+            File.Delete(valid2);
+        }
+    }
+
+    // 異常系(要件 1.6): 画像 1 が有効でも null パス 2 は ArgumentNullException(image2 も呼び出し時点で同期検証)。
+    [Fact]
+    public void CompareFacesAsync_nullパス2はArgumentNullException()
+    {
+        using FaceRecognizer recognizer = ExtractRecognizer();
+        using Mat image1 = BrightSquare(200);
+        string valid1 = WriteTempPng(image1);
+        try
+        {
+            _ = Assert.Throws<ArgumentNullException>(() =>
+            {
+                _ = recognizer.CompareFacesAsync(valid1, null!);
+            });
+        }
+        finally
+        {
+            File.Delete(valid1);
+        }
+    }
+
+    // 異常系(要件 1.5): 空 Mat(要素数 0)は ArgumentException(CompareFacesAsync・image1 / image2 の各々)。
+    [Fact]
+    public void CompareFacesAsync_空Mat1はArgumentException()
+    {
+        using FaceRecognizer recognizer = ExtractRecognizer();
+        using Mat empty = new();
+        using Mat image2 = BrightSquare(200);
+
+        _ = Assert.Throws<ArgumentException>(() =>
+        {
+            _ = recognizer.CompareFacesAsync(empty, image2);
+        });
+    }
+
+    // 異常系(要件 1.5): 画像 1 が有効でも空 Mat の画像 2 は ArgumentException(image2 も呼び出し時点で同期検証)。
+    [Fact]
+    public void CompareFacesAsync_空Mat2はArgumentException()
+    {
+        using FaceRecognizer recognizer = ExtractRecognizer();
+        using Mat image1 = BrightSquare(200);
+        using Mat empty = new();
+
+        _ = Assert.Throws<ArgumentException>(() =>
+        {
+            _ = recognizer.CompareFacesAsync(image1, empty);
         });
     }
 }

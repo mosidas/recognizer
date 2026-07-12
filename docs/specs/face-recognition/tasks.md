@@ -73,7 +73,7 @@
     - 対象ファイル: `src/Recognizer/FaceRecognizer.cs`(変更), `tests/Recognizer.Tests/FaceRecognizerTests.cs`(変更)
     - 設計参照: design.md §4 システムフロー(逐次検出・画像 1 → 2)、§8(NoFaceInImage1/2)、§10(逐次検出の理由)
     - 検証コマンド: `dotnet test --filter "FullyQualifiedName~FaceRecognizerTests"`(単色 2 画像で解析的類似度=Success(⑰⑱) / 画像 1 未検出 → NoFaceInImage1・Similarity=0・Face1=null(両未検出も同) / 画像 2 未検出 → NoFaceInImage2(㉑ 白黒組合せ) / Face1/Face2 設定 / 既定 0.7・0.5 / 閾値範囲外 → ArgumentException)
-  - [ ] 5.5 画像入力 3 形式のオーバーロード(path/bytes 委譲)と入力ガードのテストと実装
+  - [x] 5.5 画像入力 3 形式のオーバーロード(path/bytes 委譲)と入力ガードのテストと実装
         _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 1.6_
         _Boundary: FaceRecognizer_
         _Depends: 5.3, 5.4_
