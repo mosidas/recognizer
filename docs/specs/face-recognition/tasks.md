@@ -6,7 +6,7 @@
 ## タスク一覧
 
 - [ ] 1. テスト fixture 増設(埋め込み・入力依存検出)
-  - [ ] 1.1 fixture ⑰〜㉓ の生成スクリプト追加・生成・コミットと README 追記
+  - [x] 1.1 fixture ⑰〜㉓ の生成スクリプト追加・生成・コミットと README 追記
         _Requirements: 2.2, 2.3, 2.6, 3.5, 4.3, 4.4_
         _Boundary: TestFixtures_
     - 対象ファイル: `tools/generate_test_models.py`(変更・builder 追加), `tests/Recognizer.Tests/Fixtures/embed_nchw_meanrgb_d4.onnx` / `embed_nhwc_meanrgb_d4.onnx` / `embed_dynamic_input_d4.onnx` / `embed_unsupported_rank3.onnx` / `embed_unsupported_rank2_batch2.onnx` / `embed_unsupported_dynamic_dim.onnx` / `face_inputconf_f5.onnx`(生成物 7 種・新規), `tests/Recognizer.Tests/Fixtures/README.md`(変更・⑰〜㉓ 追記)
@@ -99,4 +99,7 @@
 
 ## Implementation Notes
 
-(このセクションは dev-implement が実装中の学習・選択した知識 port・横断的な気付きを追記する領域。初期は空でよい)
+- 知識 port: `docs/dev/ports/` は存在せず注入なし。
+- (1.1)埋め込み fixture の出力チャネル順は `[mean(R),mean(G),mean(B),1.0]`。fixture は入力チャネルをそのまま ReduceMean するため、**EmbeddingPreprocessor が BGR→RGB 変換して RGB 順で詰めること**を後続の C# テストで担保する必要がある(単色 (r,g,b) 入力 → 正規化 `(x−127.5)/128` の解析値と照合)。
+- (1.1)㉓(D 動的)は入力を動的軸 `[1,3,'h','w']` にしないと ORT が Shape→Slice を定数畳み込みして D が静的化してしまう。判別上は 112 既定に落ちるため後続テストは無害。
+- (1.1)㉑ `face_inputconf_f5` は conf=入力全体の ReduceMean(前処理 /255 後)。letterbox パディング(114)が混じらないよう、C# テストは **640×640 の正方単色画像**を使う(白=conf 1.0 検出 / 黒=0.0 未検出)。出力 `[1,5,6]`(N=6>F=5 で転置 `[1,5,N]` 判別)。

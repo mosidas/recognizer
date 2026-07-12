@@ -85,6 +85,11 @@ IR_VERSION = 10
 INPUT_H = 640
 INPUT_W = 640
 
+# 埋め込みモデルの既定入力サイズ(InsightFace 系 112x112。research.md §2)と出力次元
+EMBED_H = 112
+EMBED_W = 112
+EMBED_DIM = 4
+
 # 生の候補 (cx, cy, w, h, conf) — 格納順は意図的に順不同(降順整列の検証のため)
 CANDIDATES = [
     (300.0, 300.0, 60.0, 60.0, 0.85),  # B  独立・高信頼
@@ -506,6 +511,177 @@ def make_object_model(
     return _finalize(graph, filename)
 
 
+# ---------------------------------------------------------------------------
+# 顔認証(face-recognition)用 fixture(design.md §9 の ⑰〜㉓)。
+# 既存の入力非依存(定数出力)fixture では「2 画像で埋め込みが異なる」「片方だけ顔未検出」
+# を検証できないため、入力依存かつ決定論的な最小グラフを追加する(research.md §4)。
+# 既存 make_model / make_object_model 等の関数・CANDIDATES には一切触れないので、
+# 既存 16 fixture のバイト列は不変(生成後に git status で確認する)。
+# ---------------------------------------------------------------------------
+
+
+def make_embedding_model(
+    filename: str,
+    layout: str,          # "NCHW" | "NHWC"
+    dynamic_input: bool = False,
+    graph_name: str = "dummy_embed",
+) -> str:
+    """埋め込みダミー(⑰⑱⑲)。出力 [1, 4] = [mean(R), mean(G), mean(B), 1.0]。
+
+    入力は前処理(BGR→RGB・(x−127.5)/128)済みのテンソルなので、各チャネルの空間平均が
+    そのまま正規化後の値になる。単色 (r,g,b) 画像なら埋め込みは
+    [(r−127.5)/128, (g−127.5)/128, (b−127.5)/128, 1.0](RGB 順)で解析的に計算でき、
+    2 色のコサイン類似度の期待値を手計算できる(design §9 ⑰)。
+    末尾 1.0 は ReduceMean で消えない定数成分を持たせ、ゼロベクトル退化を避けるため。
+    """
+    if layout == "NCHW":
+        # [N, 3, H, W]。空間軸は H(2)・W(3)、チャネル軸(1)を残す。
+        in_shape = [1, 3, "height", "width"] if dynamic_input else [1, 3, EMBED_H, EMBED_W]
+        spatial_axes = [2, 3]
+    elif layout == "NHWC":
+        # [N, H, W, 3]。空間軸は H(1)・W(2)、チャネル軸(3)を残す。
+        in_shape = [1, "height", "width", 3] if dynamic_input else [1, EMBED_H, EMBED_W, 3]
+        spatial_axes = [1, 2]
+    else:
+        raise ValueError(f"未対応の layout: {layout}")
+
+    input_vi = helper.make_tensor_value_info("images", TensorProto.FLOAT, in_shape)
+    output_vi = helper.make_tensor_value_info("output", TensorProto.FLOAT, [1, EMBED_DIM])
+
+    # 末尾成分 1.0(定数)。[1,1] にして ch_mean [1,3] と axis=1 で連結し [1,4] にする。
+    one_const = numpy_helper.from_array(
+        np.array([[1.0]], dtype=np.float32), name="one_const"
+    )
+    # 空間軸で平均 → [1, 3](チャネル平均)。opset 17 の ReduceMean は axes を属性で取る。
+    n_mean = helper.make_node(
+        "ReduceMean", ["images"], ["ch_mean"], axes=spatial_axes, keepdims=0, name="ch_mean"
+    )
+    n_concat = helper.make_node(
+        "Concat", ["ch_mean", "one_const"], ["output"], axis=1, name="concat_one"
+    )
+    graph = helper.make_graph(
+        [n_mean, n_concat],
+        graph_name,
+        [input_vi],
+        [output_vi],
+        initializer=[one_const],
+    )
+    return _finalize(graph, filename)
+
+
+def make_embedding_unsupported_const(
+    filename: str, out_data: np.ndarray, graph_name: str
+) -> str:
+    """非対応の静的形状埋め込み(⑳ rank3・㉒ rank2 先頭次元≠1)。
+
+    出力は定数だが判別が読むのは OutputMetadata の形状なので、入力を形式的に消費して
+    (make_model と同じ Mul→ReduceSum→Add 手法で入力プルーニングを防ぎつつ)定数を返す。
+    ⑳: out_data=[1,4,4](rank3)、㉒: out_data=[2,4](rank2・先頭次元 2)。規則 (e-d)。
+    """
+    input_vi = helper.make_tensor_value_info(
+        "images", TensorProto.FLOAT, [1, 3, EMBED_H, EMBED_W]
+    )
+    output_vi = helper.make_tensor_value_info(
+        "output", TensorProto.FLOAT, list(out_data.shape)
+    )
+    const_out_init = numpy_helper.from_array(out_data, name="const_output")
+    zero_init = numpy_helper.from_array(np.array(0.0, dtype=np.float32), name="zero_scalar")
+    consume, reduced = _consume_input_to_scalar("images", "a")
+    n_add = helper.make_node("Add", ["const_output", reduced], ["output"], name="add1")
+    graph = helper.make_graph(
+        consume + [n_add],
+        graph_name,
+        [input_vi],
+        [output_vi],
+        initializer=[const_out_init, zero_init],
+    )
+    return _finalize(graph, filename)
+
+
+def make_embedding_dynamic_dim(filename: str, graph_name: str) -> str:
+    """非対応の動的次元埋め込み(㉓)。出力 [1, D] の D が動的軸(≤0)。規則 (e-d)。
+
+    ORT の shape inference が D を具体値へ解決しないよう、object の動的出力(⑯)と同じ手法で
+    D 軸長を動的入力次元に依存させる:Slice(const[1,4], ends=Gather(Shape(images),[2]), axes=[1])。
+    ends=H(実行時 112)は D 軸長 4 を超えるため clamp され実行時 [1,4]、shape inference は D を未知(-1)にする。
+    宣言形状の D 軸は dim_param("dim")。**入力 H/W も動的**にしないと Shape が定数畳み込みされ
+    D が静的 4 に解決されてしまう(⑯ と同じ理由)。入力の動的軸は判別上 112 既定に落ちるため無害。
+    """
+    input_vi = helper.make_tensor_value_info(
+        "images", TensorProto.FLOAT, [1, 3, "height", "width"]
+    )
+    output_vi = helper.make_tensor_value_info("output", TensorProto.FLOAT, [1, "dim"])
+    const_out_init = numpy_helper.from_array(
+        np.array([[0.1, 0.2, 0.3, 0.4]], dtype=np.float32), name="const_output"
+    )  # [1, 4]
+    initializers = [
+        const_out_init,
+        numpy_helper.from_array(np.array([2], dtype=np.int64), name="dyn_h_index"),
+        numpy_helper.from_array(np.array([0], dtype=np.int64), name="dyn_starts"),
+        numpy_helper.from_array(np.array([1], dtype=np.int64), name="dyn_axes"),
+    ]
+    nodes = [
+        helper.make_node("Shape", ["images"], ["dyn_in_shape"], name="dyn_shape"),
+        helper.make_node(
+            "Gather", ["dyn_in_shape", "dyn_h_index"], ["dyn_ends"], axis=0, name="dyn_gather_h"
+        ),
+        helper.make_node(
+            "Slice",
+            ["const_output", "dyn_starts", "dyn_ends", "dyn_axes"],
+            ["output"],
+            name="dyn_slice",
+        ),
+    ]
+    graph = helper.make_graph(nodes, graph_name, [input_vi], [output_vi], initializer=initializers)
+    return _finalize(graph, filename)
+
+
+def make_face_inputconf_model(filename: str, graph_name: str) -> str:
+    """入力依存 conf の顔検出ダミー(㉑)。出力 [1, 5, N] 転置・bbox 定数・conf = 入力平均。
+
+    検出前処理(/255・letterbox)後の入力全体平均を全候補の conf に流し込む。640x640 の
+    単色画像で: 白(255)→ /255 = 1.0 → conf≈1.0(検出)、黒(0)→ conf≈0(未検出)。
+    NoFaceInImage1/2(4.3,4.4)・抽出未検出(3.5)の分岐検証に使う(research.md §4)。
+    N=6 > F=5 にして判別が転置 [1,5,N](F=5・ランドマーク無し)と確定できるようにする。
+    bbox は全候補同一(NMS で 1 件に収れん)、中心 (320,320)・幅高 200 の 640 空間内の矩形。
+    """
+    n_cand = 6
+    input_vi = helper.make_tensor_value_info(
+        "images", TensorProto.FLOAT, [1, 3, INPUT_H, INPUT_W]
+    )
+    output_vi = helper.make_tensor_value_info(
+        "output", TensorProto.FLOAT, [1, 5, n_cand]
+    )
+    # bbox 行 [1, 4, N](cx, cy, w, h を全候補で同値)。
+    bbox = np.zeros((1, 4, n_cand), dtype=np.float32)
+    bbox[0, 0, :] = 320.0  # cx
+    bbox[0, 1, :] = 320.0  # cy
+    bbox[0, 2, :] = 200.0  # w
+    bbox[0, 3, :] = 200.0  # h
+    bbox_init = numpy_helper.from_array(bbox, name="bbox_const")
+    ones_init = numpy_helper.from_array(
+        np.ones((1, 1, n_cand), dtype=np.float32), name="conf_ones"
+    )
+    # ReduceMean(全軸) → スカラ(入力平均)。conf 行 = ones × 平均 → [1,1,N]。
+    n_mean = helper.make_node(
+        "ReduceMean", ["images"], ["mean_scalar"], keepdims=0, name="input_mean"
+    )
+    n_conf = helper.make_node(
+        "Mul", ["conf_ones", "mean_scalar"], ["conf_row"], name="conf_row"
+    )
+    n_concat = helper.make_node(
+        "Concat", ["bbox_const", "conf_row"], ["output"], axis=1, name="concat_conf"
+    )
+    graph = helper.make_graph(
+        [n_mean, n_conf, n_concat],
+        graph_name,
+        [input_vi],
+        [output_vi],
+        initializer=[bbox_init, ones_init],
+    )
+    return _finalize(graph, filename)
+
+
 def main() -> None:
     specs = [
         # (ファイル名, layout, F, transposed, dynamic_input)
@@ -571,6 +747,49 @@ def main() -> None:
     assert dyn_size < 100 * 1024, f"object_dynamic_output_4c3.onnx が 100 KB 以上: {dyn_size} bytes"
     print(f"  生成(物体・動的出力): object_dynamic_output_4c3.onnx  ({dyn_size} bytes)  "
           f"宣言 [1,7,'num'] 実形状 [1,7,60]")
+
+    # 顔認証用 fixture(face-recognition design §9 ⑰〜㉓)。
+    # 埋め込み系(⑰⑱⑲)は入力依存の決定論出力、非対応系(⑳㉒㉓)は規則 (e-d) の分岐行使、
+    # ㉑ は入力平均を conf にした顔検出ダミー。
+    embed_specs = [
+        # (ファイル名, layout, dynamic_input, graph_name)
+        ("embed_nchw_meanrgb_d4.onnx", "NCHW", False, "dummy_embed_nchw"),   # ⑰
+        ("embed_nhwc_meanrgb_d4.onnx", "NHWC", False, "dummy_embed_nhwc"),   # ⑱
+        ("embed_dynamic_input_d4.onnx", "NCHW", True, "dummy_embed_dyn"),    # ⑲
+    ]
+    for filename, layout, dynamic, graph_name in embed_specs:
+        path = make_embedding_model(filename, layout, dynamic, graph_name)
+        size = os.path.getsize(path)
+        assert size < 100 * 1024, f"{filename} が 100 KB 以上: {size} bytes"
+        print(f"  生成(埋め込み): {filename}  ({size} bytes)  layout={layout} "
+              f"D={EMBED_DIM} dynamic={dynamic}")
+
+    embed_unsupported = [
+        # ⑳ 出力 [1,4,4](rank3)
+        make_embedding_unsupported_const(
+            "embed_unsupported_rank3.onnx",
+            np.zeros((1, EMBED_DIM, EMBED_DIM), dtype=np.float32),
+            "dummy_embed_rank3",
+        ),
+        # ㉒ 出力 [2,4](rank2・先頭次元 2)
+        make_embedding_unsupported_const(
+            "embed_unsupported_rank2_batch2.onnx",
+            np.zeros((2, EMBED_DIM), dtype=np.float32),
+            "dummy_embed_rank2_batch2",
+        ),
+        # ㉓ 出力 [1,D] の D が動的
+        make_embedding_dynamic_dim("embed_unsupported_dynamic_dim.onnx", "dummy_embed_dyn_dim"),
+    ]
+    for path in embed_unsupported:
+        size = os.path.getsize(path)
+        assert size < 100 * 1024, f"{os.path.basename(path)} が 100 KB 以上: {size} bytes"
+        print(f"  生成(埋め込み非対応): {os.path.basename(path)}  ({size} bytes)")
+
+    # ㉑ 入力依存 conf の顔検出ダミー(出力 [1,5,6] 転置)。
+    inputconf_path = make_face_inputconf_model("face_inputconf_f5.onnx", "dummy_face_inputconf")
+    inputconf_size = os.path.getsize(inputconf_path)
+    assert inputconf_size < 100 * 1024, f"face_inputconf_f5.onnx が 100 KB 以上: {inputconf_size} bytes"
+    print(f"  生成(入力依存 conf): face_inputconf_f5.onnx  ({inputconf_size} bytes)  出力 [1,5,6]")
 
     print("全 fixture の生成と onnx.checker 検証が完了しました。")
 
