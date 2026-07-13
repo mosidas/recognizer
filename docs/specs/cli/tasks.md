@@ -6,7 +6,7 @@
 ## タスク一覧
 
 - [ ] 1. プロジェクト骨格とテスト基盤(以降の全タスクの土台)
-  - [ ] 1.1 CLI プロジェクトとテストプロジェクトを作成し、`Recognizer.sln` に登録する
+  - [x] 1.1 CLI プロジェクトとテストプロジェクトを作成し、`Recognizer.sln` に登録する
         _Requirements: 1.1, 1.2, 1.4, 1.5, 1.7_
         _Boundary: Recognizer.Cli_
     - 対象ファイル: `src/Recognizer.Cli/Recognizer.Cli.csproj`(新規)、`tests/Recognizer.Cli.Tests/Recognizer.Cli.Tests.csproj`(新規)、`Recognizer.sln`(変更)
