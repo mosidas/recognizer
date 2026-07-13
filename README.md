@@ -10,6 +10,16 @@ YOLO 形式の ONNX モデルで動作する顔検出・顔認証・物体検出
 
 モデルの入出力形式(テンソルレイアウト・出力形状)は ONNX メタデータと出力形状から自動判別する。
 
+## 対応プラットフォーム
+
+| プラットフォーム | RID |
+| --- | --- |
+| Linux (x64) | `linux-x64` |
+| Windows (x64) | `win-x64` |
+| macOS (Apple Silicon) | `osx-arm64` |
+
+ネイティブ資産は RID 別のランタイムパッケージで解決するため、利用側で RID を指定しない `dotnet build` でもホストの RID 向けに動作する。依存パッケージと RID の対応は `docs/api-spec.md` §2 を参照。
+
 ## API 仕様
 
 `docs/api-spec.md` を参照。
@@ -35,6 +45,16 @@ dotnet test
 ```
 
 テストは `Fixtures/` にコミット済みのダミー ONNX モデルで自己完結するため、実行に Python は不要である。
+
+### CI での検証
+
+`.github/workflows/ci.yml` が GitHub Actions で `main` への push と pull request 時に走る。対応プラットフォーム 3 種のマトリクス(`ubuntu-latest` = linux-x64 / `windows-latest` = win-x64 / `macos-15` = osx-arm64)で、各ランナー上の実機で次を実行する。
+
+1. `dotnet build --configuration Release`
+2. `dotnet test --configuration Release --no-build`
+3. RID を指定した `dotnet publish`(RID 別ネイティブ資産が解決されることの確認)
+
+`fail-fast: false` のため、1 つのプラットフォームが失敗しても他は完走し、全プラットフォームの結果が得られる。devcontainer は linux/amd64 のため Windows / macOS の実機確認はローカルでは行えず、CI が唯一の検証手段である。
 
 ### テスト用 fixture の再生成
 

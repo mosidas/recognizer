@@ -43,21 +43,21 @@
     - 検証コマンド: `dotnet build --configuration Release && dotnet test --configuration Release --no-build`(CI と同一のコマンド列がローカルで通ること。`_Depends: 1.2_` があるのは、タスク 1 が RED 状態(1.1 完了・1.2 未完了)のときにこのコマンドが CI と無関係な理由で失敗するため)
 
 - [ ] 3. 恒久情報の更新
-  - [ ] 3.1 `docs/api-spec.md` の §2「対象環境」に対応 RID を明示し、§2「画像処理」と §5「非機能要件」の依存パッケージ記述を実際の `PackageReference`(5 件)と一致させる
+  - [x] 3.1 `docs/api-spec.md` の §2「対象環境」に対応 RID を明示し、§2「画像処理」と §5「非機能要件」の依存パッケージ記述を実際の `PackageReference`(5 件)と一致させる
         _Requirements: 6.1, 6.2_
         _Boundary: Docs_
         _Depends: 1.2_
     - 対象ファイル: `docs/api-spec.md`(変更)
     - 設計参照: design.md §2.4(パッケージ表), §3(File Structure Plan)
     - 検証コマンド: `for r in linux-x64 win-x64 osx-arm64 OpenCvSharp4.runtime.win Sdcb.OpenCvSharp4.mini.runtime.osx-arm64; do grep -q "$r" docs/api-spec.md || echo "MISSING: $r"; done`(出力が空であること。3 RID と追加パッケージがすべて api-spec に明記されている)
-  - [ ] 3.2 `README.md` に対応プラットフォームと CI での検証方法を追記する (P)
+  - [x] 3.2 `README.md` に対応プラットフォームと CI での検証方法を追記する (P)
         _Requirements: 6.3_
         _Boundary: Docs_
         _Depends: 1.2_
     - 対象ファイル: `README.md`(変更)
     - 設計参照: design.md §4(CI 設計), §2.4
     - 検証コマンド: `for r in linux-x64 win-x64 osx-arm64 "GitHub Actions"; do grep -q "$r" README.md || echo "MISSING: $r"; done`(出力が空であること)
-  - [ ] 3.3 `CLAUDE.md` の devcontainer 注意事項を訂正する。現行の「OpenCvSharp の公式ネイティブランタイムが linux-arm64 非対応」という理由は**事実に反する**(公式 `OpenCvSharp4.runtime.linux-arm64` は実在)。devcontainer が linux/amd64 であること自体は維持し、誤った理由の記述を実態へ書き換える (P)
+  - [x] 3.3 `CLAUDE.md` の devcontainer 注意事項を訂正する。現行の「OpenCvSharp の公式ネイティブランタイムが linux-arm64 非対応」という理由は**事実に反する**(公式 `OpenCvSharp4.runtime.linux-arm64` は実在)。devcontainer が linux/amd64 であること自体は維持し、誤った理由の記述を実態へ書き換える (P)
         _Requirements: 6.4_
         _Boundary: Docs_
     - 対象ファイル: `CLAUDE.md`(変更)
