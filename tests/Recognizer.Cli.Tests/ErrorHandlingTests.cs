@@ -19,6 +19,7 @@ public sealed class ErrorHandlingTests
 {
     private const string ValidFaceModel = "face_nchw_standard_f5.onnx";
     private const string UnsupportedFaceModel = "face_unsupported_f7.onnx";
+    private const string ValidObjectModel = "object_nchw_transposed_4c3.onnx";
 
     // 要件 7.3: 成功 / 実行時エラー / 使用法エラーは互いに異なり、エラーは非 0。
     [Fact]
@@ -337,6 +338,125 @@ public sealed class ErrorHandlingTests
             "detect-face", host.CreateWhiteImage(), "--model", CliTestHost.FixturePath(UnsupportedFaceModel));
 
         AssertRuntimeError(ErrorCodes.UnsupportedModelFormat, exitCode, stdout, stderr);
+    }
+
+    // 要件 7.6 / design §8.1 の要:--classes のファイル不在は FileNotFoundException だが、モデル不在も同じ型で
+    // ある。ClassNamesFile が素の例外を漏らすと順 2 に吸われて modelNotFound と誤判定されるため、
+    // 「classesFileNotFound であること」と「modelNotFound でないこと」を両方固定する(誤判定の回帰テスト)。
+    [Fact]
+    public async Task DetectObject_classesファイル不在はclassesFileNotFoundでmodelNotFoundにならない()
+    {
+        using CliTestHost host = new();
+
+        (int exitCode, string stdout, string stderr) = await CliTestHost.RunCliAsync(
+            "detect-object",
+            host.CreateWhiteImage(),
+            "--model",
+            CliTestHost.FixturePath(ValidObjectModel),
+            "--classes",
+            host.NonExistentPath(".txt"));
+
+        AssertRuntimeError(ErrorCodes.ClassesFileNotFound, exitCode, stdout, stderr);
+        Assert.NotEqual(ErrorCodes.ModelNotFound, ReadErrorJson(stderr).Code);
+    }
+
+    // 要件 7.7: --classes が空文字(シェル変数の未展開 `--classes "$UNSET"` で現実に起きる)でも、発生箇所は
+    // ClassNamesFile である。File.ReadAllLines("") の ArgumentException を漏らすと、RuntimeErrorMapper の
+    // 順 5(ArgumentException → imageLoadFailed)に吸われ、画像起因のエラーとして報告される。
+    // 順 5 は「ここに到達する ArgumentException は画像起因に限られる」(前提 P1)を根拠にしており、
+    // クラス名ファイルの読み込みがその前提を破っていないことを固定する。
+    [Fact]
+    public async Task DetectObject_classesが空文字でもimageLoadFailedにならない()
+    {
+        using CliTestHost host = new();
+
+        (int exitCode, string stdout, string stderr) = await CliTestHost.RunCliAsync(
+            "detect-object",
+            host.CreateWhiteImage(),
+            "--model",
+            CliTestHost.FixturePath(ValidObjectModel),
+            "--classes",
+            string.Empty);
+
+        AssertRuntimeError(ErrorCodes.ClassesFileNotFound, exitCode, stdout, stderr);
+        Assert.NotEqual(ErrorCodes.ImageLoadFailed, ReadErrorJson(stderr).Code);
+    }
+
+    // 要件 7.5 との対比: 同じ detect-object でも、不在なのがモデルなら modelNotFound。--classes は正常なものを
+    // 渡し、2 つの FileNotFoundException が発生箇所ごとに別の code へ分かれることを対で示す(要件 7.7)。
+    [Fact]
+    public async Task DetectObject_モデル不在はclassesが正常ならmodelNotFound()
+    {
+        using CliTestHost host = new();
+
+        (int exitCode, string stdout, string stderr) = await CliTestHost.RunCliAsync(
+            "detect-object",
+            host.CreateWhiteImage(),
+            "--model",
+            host.NonExistentPath(".onnx"),
+            "--classes",
+            host.CreateClassNamesFile("犬", "猫", "鳥"));
+
+        AssertRuntimeError(ErrorCodes.ModelNotFound, exitCode, stdout, stderr);
+    }
+
+    // design §8.1: --classes の読み込みは ObjectDetector の生成より先に行う。両方が不在なら、先に失敗する
+    // --classes 側の code が出る。生成順を入れ替えると modelNotFound になって落ちる。
+    [Fact]
+    public async Task DetectObject_モデルとclassesが両方不在なら先に読むclassesのcodeになる()
+    {
+        using CliTestHost host = new();
+
+        (int exitCode, string stdout, string stderr) = await CliTestHost.RunCliAsync(
+            "detect-object",
+            host.CreateWhiteImage(),
+            "--model",
+            host.NonExistentPath(".onnx"),
+            "--classes",
+            host.NonExistentPath(".txt"));
+
+        AssertRuntimeError(ErrorCodes.ClassesFileNotFound, exitCode, stdout, stderr);
+    }
+
+    // 要件 7.6 / design §6: 読み込み自体に失敗する経路。--classes にディレクトリを渡すと
+    // UnauthorizedAccessException になる(実測。File.ReadAllLines は Unix でディレクトリを開けない)。
+    [Fact]
+    public async Task DetectObject_classesがディレクトリならclassesFileReadFailed()
+    {
+        using CliTestHost host = new();
+
+        // Why not: 専用のディレクトリ生成ヘルパーを CliTestHost に足さない。ホストの作業ディレクトリは
+        // 一時ファイルの親として必ず存在するため、生成済みファイルの親を取れば同じものが得られる。
+        string directory = Path.GetDirectoryName(host.CreateClassNamesFile("犬"))!;
+
+        (int exitCode, string stdout, string stderr) = await CliTestHost.RunCliAsync(
+            "detect-object",
+            host.CreateWhiteImage(),
+            "--model",
+            CliTestHost.FixturePath(ValidObjectModel),
+            "--classes",
+            directory);
+
+        AssertRuntimeError(ErrorCodes.ClassesFileReadFailed, exitCode, stdout, stderr);
+    }
+
+    // design §6: 親ディレクトリごと存在しない場合は DirectoryNotFoundException(実測)。これも「見つからない」
+    // 側であり classesFileNotFound に寄せる。catch を IOException 一本にすると readFailed に落ちて壊れる。
+    [Fact]
+    public async Task DetectObject_classesの親ディレクトリ不在もclassesFileNotFound()
+    {
+        using CliTestHost host = new();
+        string classes = Path.Combine(host.NonExistentPath(string.Empty), "classes.txt");
+
+        (int exitCode, string stdout, string stderr) = await CliTestHost.RunCliAsync(
+            "detect-object",
+            host.CreateWhiteImage(),
+            "--model",
+            CliTestHost.FixturePath(ValidObjectModel),
+            "--classes",
+            classes);
+
+        AssertRuntimeError(ErrorCodes.ClassesFileNotFound, exitCode, stdout, stderr);
     }
 
     // code は機械可読な契約(要件 7.7・7.8)であり、値そのものを固定する。

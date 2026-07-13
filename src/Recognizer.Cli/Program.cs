@@ -48,7 +48,7 @@ internal static class Program
     {
         try
         {
-            Cv2.SetLogLevel(LogLevel.SILENT);
+            _ = Cv2.SetLogLevel(LogLevel.SILENT);
         }
         catch (DllNotFoundException)
         {

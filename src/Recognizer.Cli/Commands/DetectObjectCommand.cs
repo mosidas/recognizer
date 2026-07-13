@@ -5,13 +5,13 @@ using Recognizer.Cli.Output;
 namespace Recognizer.Cli.Commands;
 
 /// <summary>
-/// <c>detect-object</c> コマンドの定義と Action(要件 4.1〜4.3・4.5・4.7・4.8)。
+/// <c>detect-object</c> コマンドの定義と Action(要件 4.1〜4.8)。
 /// ライブラリ呼び出しと DTO 組み立てのみを持ち、JSON の形は <see cref="Output"/> に委ねる(design §2)。
 /// </summary>
 internal static class DetectObjectCommand
 {
     /// <summary>
-    /// <c>detect-object &lt;image&gt; --model &lt;path&gt; [--confidence 0.5] [--nms 0.5]</c> を組み立てる。
+    /// <c>detect-object &lt;image&gt; --model &lt;path&gt; [--classes &lt;path&gt;] [--confidence 0.5] [--nms 0.5]</c> を組み立てる。
     /// </summary>
     public static Command Create(UsageErrorCollector collector)
     {
@@ -24,6 +24,14 @@ internal static class DetectObjectCommand
             Required = true,
         };
 
+        // Why not: ファイルの存在を Option の段階で検証しない(Option<FileInfo> や Validators を使わない)。
+        // --classes のファイル不在は使用法エラー(終了コード 2)ではなく実行時エラー(要件 7.6)であり、
+        // 分類は ClassNamesFile が付けた code を RuntimeErrorMapper が採る経路に一本化する(design §8.1)。
+        Option<string?> classes = new("--classes")
+        {
+            Description = "クラス名ファイル(1 行 1 クラス名)のパス。省略時はライブラリの既定解決に委ねる。",
+        };
+
         // Why not: 既定値に detect-face の 0.7 を流用しない。detect-object の --confidence の既定は 0.5 で、
         // ライブラリ(ObjectDetector.DetectAsync)の既定とも一致する(要件 2.3)。
         Option<float> confidence = ThresholdOption.Create("--confidence", 0.5f, collector);
@@ -33,12 +41,13 @@ internal static class DetectObjectCommand
         {
             image,
             model,
+            classes,
             confidence,
             nms,
         };
 
         command.SetAction((parseResult, cancellationToken)
-            => ExecuteAsync(parseResult, image, model, confidence, nms, cancellationToken));
+            => ExecuteAsync(parseResult, image, model, classes, confidence, nms, cancellationToken));
 
         return command;
     }
@@ -47,6 +56,7 @@ internal static class DetectObjectCommand
         ParseResult parseResult,
         Argument<string> image,
         Option<string> model,
+        Option<string?> classes,
         Option<float> confidence,
         Option<float> nms,
         CancellationToken cancellationToken)
@@ -55,9 +65,15 @@ internal static class DetectObjectCommand
         // (要件 6.5)であり、検出にもこの文字列をそのまま使う。
         string imagePath = parseResult.GetValue(image)!;
 
-        // Why not: classNames に CLI が既定値を用意しない。null を渡してライブラリの既定解決
+        // Why not: ObjectDetector の生成後に読まない。モデルのロードは重く、クラス名ファイルの不在という
+        // 先に分かる失敗をその後ろに置く理由がない(design §8.1)。
+        // Why not: --classes 省略時に CLI が既定のクラス名を用意しない。null を渡してライブラリの既定解決
         // (80 クラスなら COCO 名、それ以外は class_{id})に委ねる(要件 4.5)。
-        using ObjectDetector detector = new(parseResult.GetValue(model)!, classNames: null);
+        IReadOnlyList<string>? classNames = parseResult.GetValue(classes) is { } classesPath
+            ? ClassNamesFile.Read(classesPath)
+            : null;
+
+        using ObjectDetector detector = new(parseResult.GetValue(model)!, classNames);
         IReadOnlyList<ObjectDetection> objects = await detector
             .DetectAsync(
                 imagePath,

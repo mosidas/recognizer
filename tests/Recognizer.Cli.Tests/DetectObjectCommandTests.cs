@@ -86,6 +86,80 @@ public sealed class DetectObjectCommandTests
         Assert.Equal(["person", "car", "cat"], ClassNames(objects));
     }
 
+    // 要件 4.4: --classes で指定したファイルの内容が className に反映される(⑫ は C=3 で ClassId 0 / 1 / 2)。
+    // 指定が効いていなければ、既定解決の class_0 / class_1 / class_2 のままになって落ちる。
+    [Fact]
+    public async Task classesで指定したクラス名がclassNameに反映される()
+    {
+        using CliTestHost host = new();
+        string image = host.CreateWhiteImage();
+        string classes = host.CreateClassNamesFile("犬", "猫", "鳥");
+
+        (int exitCode, string stdout, string stderr) = await CliTestHost.RunCliAsync(
+            "detect-object",
+            image,
+            "--model",
+            CliTestHost.FixturePath(ConstantObjectModel),
+            "--classes",
+            classes);
+
+        Assert.Equal(ExitCodes.Success, exitCode);
+        Assert.Empty(stderr);
+
+        JsonElement objects = ReadJson(stdout).GetProperty("objects");
+        Assert.Equal([0, 1, 2], ClassIds(objects));
+        Assert.Equal(["犬", "猫", "鳥"], ClassNames(objects));
+    }
+
+    // design §6 の事後条件: 各行は前後空白を除去し、空行は除く(行順は保つ)。
+    // trim / 空行除去のどちらを怠っても、ClassId 1 / 2 のクラス名がずれて落ちる。
+    [Fact]
+    public async Task classesファイルは前後空白を除去し空行を読み飛ばす()
+    {
+        using CliTestHost host = new();
+        string image = host.CreateWhiteImage();
+        string classes = host.CreateClassNamesFile("  犬  ", string.Empty, "\t猫", "   ", "鳥 ");
+
+        (int exitCode, string stdout, string stderr) = await CliTestHost.RunCliAsync(
+            "detect-object",
+            image,
+            "--model",
+            CliTestHost.FixturePath(ConstantObjectModel),
+            "--classes",
+            classes);
+
+        Assert.Equal(ExitCodes.Success, exitCode);
+        Assert.Empty(stderr);
+
+        Assert.Equal(["犬", "猫", "鳥"], ClassNames(ReadJson(stdout).GetProperty("objects")));
+    }
+
+    // 要件 4.6: 行数がモデルのクラス数(⑫ は 3)と一致しなくてもエラーにしない。CLI は件数を検証せず、
+    // 範囲外の ClassId をライブラリが class_{id} にフォールバックさせる(ObjectDetector.ResolveClassName)。
+    [Fact]
+    public async Task classesの行数がクラス数と一致しなくてもエラーにならない()
+    {
+        using CliTestHost host = new();
+        string image = host.CreateWhiteImage();
+        string classes = host.CreateClassNamesFile("犬");
+
+        (int exitCode, string stdout, string stderr) = await CliTestHost.RunCliAsync(
+            "detect-object",
+            image,
+            "--model",
+            CliTestHost.FixturePath(ConstantObjectModel),
+            "--classes",
+            classes);
+
+        // 件数不一致は成功。CLI が行数を検証していれば、ここで終了コード 1 になって落ちる。
+        Assert.Equal(ExitCodes.Success, exitCode);
+        Assert.Empty(stderr);
+
+        JsonElement objects = ReadJson(stdout).GetProperty("objects");
+        Assert.Equal([0, 1, 2], ClassIds(objects));
+        Assert.Equal(["犬", "class_1", "class_2"], ClassNames(objects));
+    }
+
     // 要件 4.7・7.9・8.3: 物体 0 件は空配列 + 終了コード 0(失敗として扱わない)。
     // ⑫ の候補の最大信頼度は 0.90 のため、--confidence 0.99 で全件が閾値未満になる。
     [Fact]

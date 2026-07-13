@@ -82,7 +82,7 @@
     - 設計参照: design.md §8.1(`imageLoadFailed` / `modelNotFound` / `modelLoadFailed` / `unsupportedModelFormat`)
     - 検証コマンド: `dotnet test --filter FullyQualifiedName~ErrorHandlingTests`(画像不在・非画像ファイル・モデル不在・壊れた ONNX・`face_unsupported_f7.onnx` の各分岐を個別にテストする)
 
-- [ ] 5. detect-object コマンド(クラス名解決を含む)
+- [x] 5. detect-object コマンド(クラス名解決を含む)
   - [x] 5.1 detect-object の正常系(既定のクラス名解決・検出 0 件)を実装する
         _Requirements: 2.1, 2.2, 2.3, 4.1, 4.2, 4.3, 4.5, 4.7, 4.8, 8.1_
         _Boundary: Commands_
@@ -90,7 +90,7 @@
     - 対象ファイル: `src/Recognizer.Cli/Commands/DetectObjectCommand.cs`(新規)、`src/Recognizer.Cli/CliApplication.cs`(変更: コマンド登録)、`src/Recognizer.Cli/Output/OutputDtos.cs`(変更)、`tests/Recognizer.Cli.Tests/DetectObjectCommandTests.cs`(新規)
     - 設計参照: design.md §5 の 4.1〜4.8 行、§9.3(`object_nchw_transposed_4c3`(3 件・信頼度降順)/ `object_transposed_coco80`(COCO 名))
     - 検証コマンド: `dotnet test --filter FullyQualifiedName~DetectObjectCommandTests`(**`--confidence` の既定値が 0.5**(detect-face の 0.7 ではない)であることを検証する)
-  - [ ] 5.2 `--classes` によるクラス名解決と読み込み失敗の分岐を実装する
+  - [x] 5.2 `--classes` によるクラス名解決と読み込み失敗の分岐を実装する
         _Requirements: 4.4, 4.6, 7.6_
         _Boundary: Commands_
         _Depends: 5.1_
