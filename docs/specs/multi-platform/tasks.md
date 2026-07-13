@@ -5,7 +5,7 @@
 
 ## タスク一覧
 
-- [ ] 1. 依存パッケージの追加と依存検査テストの更新 (P)
+- [x] 1. 依存パッケージの追加と依存検査テストの更新 (P)
   - [x] 1.1 `PublicApiTests` の依存パッケージ許可リストを 5 パッケージへ更新する(TDD の RED: この時点では csproj が 3 パッケージのため失敗する)。テスト名の「3つ」も実数へ改名する
         _Requirements: 4.2, 4.3, 7.1_
         _Boundary: Recognizer.Tests_
@@ -27,7 +27,7 @@
     - 設計参照: design.md §2.4, §9(テスト戦略), §10.3(ORT 由来の `onnxruntime.dll` 混入は検証対象外)
     - 検証コマンド: `for rid in linux-x64 win-x64 osx-arm64; do dotnet publish src/Recognizer/Recognizer.csproj -c Release -r $rid -o /tmp/pub-$rid; done` の後、各出力に当該 RID の OpenCvSharp native(`libOpenCvSharpExtern.so` / `OpenCvSharpExtern.dll` / `libOpenCvSharpExtern.dylib`)が 1 つだけ存在し、他 RID の OpenCvSharp native が無いことを確認する
 
-- [ ] 2. CI ワークフローの新設
+- [x] 2. CI ワークフローの新設
   - [x] 2.1 (P) GitHub Actions のワークフローを作成する(3 プラットフォームのマトリクス、`fail-fast: false`、.NET 10 SDK セットアップ、build → test → RID 別 publish)
         _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 5.6_
         _Boundary: CI_
@@ -42,7 +42,7 @@
     - 設計参照: design.md §4(`--no-build` は直前の build と同一 configuration であること), §9
     - 検証コマンド: `dotnet build --configuration Release && dotnet test --configuration Release --no-build`(CI と同一のコマンド列がローカルで通ること。`_Depends: 1.2_` があるのは、タスク 1 が RED 状態(1.1 完了・1.2 未完了)のときにこのコマンドが CI と無関係な理由で失敗するため)
 
-- [ ] 3. 恒久情報の更新
+- [x] 3. 恒久情報の更新
   - [x] 3.1 `docs/api-spec.md` の §2「対象環境」に対応 RID を明示し、§2「画像処理」と §5「非機能要件」の依存パッケージ記述を実際の `PackageReference`(5 件)と一致させる
         _Requirements: 6.1, 6.2_
         _Boundary: Docs_
@@ -64,15 +64,15 @@
     - 設計参照: design.md §10.4(訂正方針), research.md §2.1.1(公式 linux-arm64 ランタイムの実在)
     - 検証コマンド: `! grep -q "linux-arm64 非対応" CLAUDE.md`(誤った理由が除去されていること。終了コード 0 で合格)かつ `grep -q "linux/amd64" CLAUDE.md`(devcontainer の記述自体は残っていること)
 
-- [ ] 4. 最終確認(非回帰・公開契約・設計判断の充足)
-  - [ ] 4.1 既存テストの非回帰と公開 API の不変を確認する
+- [x] 4. 最終確認(非回帰・公開契約・設計判断の充足)
+  - [x] 4.1 既存テストの非回帰と公開 API の不変を確認する
         _Requirements: 3.1, 3.2, 3.3, 4.1_
         _Boundary: Recognizer.Tests_
         _Depends: 1.2, 2.1, 3.1_
     - 対象ファイル: なし(検証のみ)
     - 設計参照: design.md §9(テスト戦略), §5(トレーサビリティ 3.1・3.3 は既存 `PublicApiTests` で担保済み)
     - 検証コマンド: `dotnet test`(224 件全 green)。`git diff --stat main -- src/Recognizer/*.cs src/Recognizer/Internal/` が空(公開層・内部層のソース無変更 = シグネチャ不変)
-  - [ ] 4.2 条件付き要件が不成立であることと、設計判断が記録済みであることを確認する(バックエンドを置換していない・ライセンス上の承認事項が無い・凍結済み unit を変更していない)
+  - [x] 4.2 条件付き要件が不成立であることと、設計判断が記録済みであることを確認する(バックエンドを置換していない・ライセンス上の承認事項が無い・凍結済み unit を変更していない)
         _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 3.4, 4.4, 6.5, 7.2, 7.3, 7.4_
         _Boundary: Docs_
         _Depends: 4.1_
@@ -82,4 +82,13 @@
 
 ## Implementation Notes
 
-(このセクションは dev-implement が実装中の学習・選択した知識 port・横断的な気付きを追記する領域)
+知識 port: なし(`docs/dev/ports/` が存在しないため注入なし)。
+
+実装中の学び:
+
+- **パッケージ ID の非対称**: Windows の公式ランタイムは `OpenCvSharp4.runtime.win`(`official` も `-x64` も付かない)。linux 版との対称性を求めて `OpenCvSharp4.official.runtime.win-x64` に「統一」すると、そのような ID は存在せず復元に失敗する。csproj に why not コメントを残した。
+- **依存検査は厳密一致**: `PublicApiTests` の許可リストは csproj の `PackageReference` 集合と `Assert.Equal` で比較する。csproj にパッケージを足す変更は、必ず許可リストと同一コミットで行う必要がある。
+- **恒久情報に無効なパッケージ ID を書かない**: 存在しない綴りをドキュメントに残すと、依存検査の grep が誤検知しうる。非対称である「事実」だけを述べ、無効な綴りは書かない方針で 3 文書を揃えた。
+- **CLAUDE.md の誤記を訂正**: 「OpenCvSharp の公式ネイティブランタイムが linux-arm64 非対応」は事実に反していた(`OpenCvSharp4.runtime.linux-arm64` 4.13.0.20260627 は実在する)。devcontainer が linux/amd64 である事実は維持し、理由の記述だけを実態(検証対象 RID が 3 つで linux-arm64 は対象外)へ書き換えた。
+- **PyYAML は devcontainer に未導入**: YAML 検証には `pip3 install --break-system-packages -q pyyaml` が必要(素の `pip3 install` は PEP 668 で拒否される)。また PyYAML は YAML 1.1 の仕様により `on:` キーを真偽値 `True` としてパースするため、トリガの検査は `d[True]` でアクセスする。GitHub Actions 側の解釈には影響しない。
+- **CI に最小権限とタイムアウトを追加**: design §4 の YAML に加えて `permissions: contents: read` と `timeout-minutes: 20` を入れた(レビュー指摘。読み取りのみの CI であり、ハング時のランナー消費を抑える)。
