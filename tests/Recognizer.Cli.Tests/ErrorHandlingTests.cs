@@ -741,6 +741,186 @@ public sealed class ErrorHandlingTests
         Assert.DoesNotContain("Unrecognized", output.Error, StringComparison.Ordinal);
     }
 
+    // ここから: 使用法エラーと --help を「実コマンド経路」で検証する(design §9.3 の「使用法エラー」
+    // 「閾値がライブラリに渡らないこと」「--help」の各行・要件 8.2)。
+    // Why not: 上の Classify / Threshold の単体テストで代替しない。単体テストはテスト内で組み立てた木を
+    // Parse するため、実コマンドのオプション名・Required 指定・位置引数の個数が設計どおりでなくても通る。
+    // 3 コマンドが出揃った今、本物の RootCommand(CliApplication が組む木)でのみ観測できる退行がある。
+
+    // 要件 2.4: 必須オプションの欠落。3 コマンドすべてで missingRequiredOption になる。
+    // Why: コマンド定義から Required = true が落ちる退行は、実コマンド経路でしか観測できない。落ちると
+    // パースが通って InvokeAsync に進み、null のモデルパスで実行時エラー(終了コード 1)に化ける。
+    public static TheoryData<string[]> MissingRequiredOptionArgs =>
+    [
+        ["detect-face", "a.png"],
+        ["detect-object", "a.png"],
+        ["compare-face", "a.png", "b.png"],
+        // --detector-model はあるが --embedding-model だけが無い場合も同じ code。
+        ["compare-face", "a.png", "b.png", "--detector-model", "d.onnx"],
+    ];
+
+    [Theory]
+    [MemberData(nameof(MissingRequiredOptionArgs))]
+    public async Task 実コマンド_必須オプション欠落はmissingRequiredOptionで終了コード2(string[] args)
+    {
+        (int exitCode, string stdout, string stderr) = await CliTestHost.RunCliAsync(args);
+
+        AssertUsageError(ErrorCodes.MissingRequiredOption, exitCode, stdout, stderr);
+    }
+
+    // 要件 2.6 の中核: 閾値が不正なら「ライブラリを呼び出してはならない」。
+    // Why: 存在しないモデルパスと併用しても終了コード 2(使用法エラー)のままであることが、ライブラリを
+    // 呼んでいないことの証明になる。もし使用法エラーの判定が InvokeAsync より後ろに動けば、先にモデルの
+    // ロードが走って modelNotFound(終了コード 1)になり、このテストが落ちる(falsification 済み)。
+    // 画像は実在するものを渡し、失敗しうる実行時エラーがモデル不在に限られる状況を作る。
+    public static TheoryData<string, string, string, string> ThresholdBeforeLibraryCases => new()
+    {
+        // 値域外(順 2)
+        { ErrorCodes.OptionValueOutOfRange, "detect-face", "--confidence", "1.5" },
+        { ErrorCodes.OptionValueOutOfRange, "detect-face", "--nms", "1.5" },
+        { ErrorCodes.OptionValueOutOfRange, "detect-object", "--confidence", "-0.1" },
+        { ErrorCodes.OptionValueOutOfRange, "detect-object", "--nms", "1.5" },
+        { ErrorCodes.OptionValueOutOfRange, "compare-face", "--detection-threshold", "1.5" },
+        { ErrorCodes.OptionValueOutOfRange, "compare-face", "--nms", "1.5" },
+        // NaN は float.TryParse に成功するため、値域判定を素朴に書くと素通りしてライブラリへ届く(要件 2.6 違反)。
+        { ErrorCodes.OptionValueOutOfRange, "detect-face", "--confidence", "NaN" },
+        // 解釈不能(順 1)
+        { ErrorCodes.InvalidOptionValue, "detect-face", "--confidence", "abc" },
+        { ErrorCodes.InvalidOptionValue, "detect-object", "--confidence", "abc" },
+        { ErrorCodes.InvalidOptionValue, "compare-face", "--detection-threshold", "abc" },
+    };
+
+    [Theory]
+    [MemberData(nameof(ThresholdBeforeLibraryCases))]
+    public async Task 実コマンド_閾値が不正ならモデル不在でも使用法エラーになりライブラリを呼ばない(
+        string expectedCode,
+        string command,
+        string option,
+        string value)
+    {
+        using CliTestHost host = new();
+        string image = host.CreateWhiteImage();
+        string missingModel = host.NonExistentPath(".onnx");
+
+        string[] args = command == "compare-face"
+            ? [
+                command,
+                image,
+                host.CreateWhiteImage(),
+                "--detector-model",
+                missingModel,
+                "--embedding-model",
+                host.NonExistentPath(".onnx"),
+                option,
+                value,
+            ]
+            : [command, image, "--model", missingModel, option, value];
+
+        (int exitCode, string stdout, string stderr) = await CliTestHost.RunCliAsync(args);
+
+        AssertUsageError(expectedCode, exitCode, stdout, stderr);
+
+        // モデル不在の実行時エラーに化けていないこと(= ライブラリのコンストラクタまで到達していないこと)。
+        Assert.NotEqual(ErrorCodes.ModelNotFound, ReadErrorJson(stderr).Code);
+        Assert.Contains(value, ReadErrorJson(stderr).Error, StringComparison.Ordinal);
+    }
+
+    // 要件 2.5: 位置引数の過不足・未知のオプション。存在しないモデルパスを書いても終了コード 2 のままである
+    // ことも同時に固定する(パースエラー時は InvokeAsync を呼ばない。design §8.2)。
+    // Why not: 未知のコマンド・コマンド未指定は上の外形テストで既に覆っているため重複させない。
+    public static TheoryData<string, string[]> RealCommandUsageErrorCases => new()
+    {
+        // 位置引数が多すぎる(順 3)
+        { ErrorCodes.UnrecognizedArgument, ["detect-face", "a.png", "b.png", "--model", "m.onnx"] },
+        { ErrorCodes.UnrecognizedArgument, ["detect-object", "a.png", "b.png", "--model", "m.onnx"] },
+        {
+            ErrorCodes.UnrecognizedArgument,
+            ["compare-face", "a.png", "b.png", "c.png", "--detector-model", "d.onnx", "--embedding-model", "e.onnx"]
+        },
+        // 未知のオプション(順 3)
+        { ErrorCodes.UnrecognizedArgument, ["detect-face", "a.png", "--model", "m.onnx", "--bogus"] },
+        // 位置引数が足りない(順 6)
+        { ErrorCodes.MissingArgument, ["detect-face", "--model", "m.onnx"] },
+        { ErrorCodes.MissingArgument, ["detect-object", "--model", "m.onnx"] },
+        // compare-face は位置引数 2 個。1 個だけでは image2 が足りない。
+        {
+            ErrorCodes.MissingArgument,
+            ["compare-face", "a.png", "--detector-model", "d.onnx", "--embedding-model", "e.onnx"]
+        },
+        // 同じオプションの重複指定(順 8 のフォールバック)。CustomParser は呼ばれず、OptionResult のトークンが
+        // 2 個になるため順 4・5 のいずれにも一致しない。これで §8.2 の 8 行すべてが実コマンド経路で覆われる。
+        {
+            ErrorCodes.InvalidUsage,
+            ["detect-face", "a.png", "--model", "m.onnx", "--confidence", "0.5", "--confidence", "abc"]
+        },
+    };
+
+    [Theory]
+    [MemberData(nameof(RealCommandUsageErrorCases))]
+    public async Task 実コマンド_位置引数の過不足と未知のオプションはdesignの分類どおり(string expectedCode, string[] args)
+    {
+        (int exitCode, string stdout, string stderr) = await CliTestHost.RunCliAsync(args);
+
+        AssertUsageError(expectedCode, exitCode, stdout, stderr);
+    }
+
+    // design §8.2 順 5 の回帰テスト(実コマンド版): 必須でない --confidence の値欠落を missingRequiredOption と
+    // 誤分類しないこと。設計レビューで検出された誤分類であり、実コマンドの Required 指定と組で成立する。
+    [Theory]
+    [InlineData("detect-face", "--confidence")]
+    [InlineData("detect-object", "--nms")]
+    [InlineData("compare-face", "--detection-threshold")]
+    public async Task 実コマンド_必須でないオプションの値欠落はinvalidOptionValueになる(string command, string option)
+    {
+        string[] args = command == "compare-face"
+            ? [command, "a.png", "b.png", "--detector-model", "d.onnx", "--embedding-model", "e.onnx", option]
+            : [command, "a.png", "--model", "m.onnx", option];
+
+        (int exitCode, string stdout, string stderr) = await CliTestHost.RunCliAsync(args);
+
+        AssertUsageError(ErrorCodes.InvalidOptionValue, exitCode, stdout, stderr);
+        Assert.NotEqual(ErrorCodes.MissingRequiredOption, ReadErrorJson(stderr).Code);
+        Assert.Contains(option, ReadErrorJson(stderr).Error, StringComparison.Ordinal);
+    }
+
+    // 要件 2.7: --help は「コマンドの一覧」を出す。3 コマンドが出揃って初めて列挙を検証できる
+    // (タスク 3.4 の時点ではコマンドが 0 個だった)。RootCommand への登録漏れをここで止める。
+    [Fact]
+    public async Task ヘルプは3コマンドすべてを列挙する()
+    {
+        (int exitCode, string stdout, string stderr) = await CliTestHost.RunCliAsync("--help");
+
+        Assert.Equal(ExitCodes.Success, exitCode);
+        Assert.Empty(stderr);
+        Assert.Contains("detect-face", stdout, StringComparison.Ordinal);
+        Assert.Contains("detect-object", stdout, StringComparison.Ordinal);
+        Assert.Contains("compare-face", stdout, StringComparison.Ordinal);
+    }
+
+    // 要件 2.7: サブコマンドの --help は「オプションの一覧」を出し、終了コード 0 で終わる。
+    // 必須オプションを欠いていても使用法エラーにならない(design §8.2 の最後の注記。実測)。
+    public static TheoryData<string, string[]> SubcommandHelpCases => new()
+    {
+        { "detect-face", ["--model", "--confidence", "--nms"] },
+        { "detect-object", ["--model", "--classes", "--confidence", "--nms"] },
+        { "compare-face", ["--detector-model", "--embedding-model", "--detection-threshold", "--nms"] },
+    };
+
+    [Theory]
+    [MemberData(nameof(SubcommandHelpCases))]
+    public async Task サブコマンドのヘルプは終了コード0でオプションを列挙する(string command, string[] expectedOptions)
+    {
+        (int exitCode, string stdout, string stderr) = await CliTestHost.RunCliAsync(command, "--help");
+
+        Assert.Equal(ExitCodes.Success, exitCode);
+        Assert.Empty(stderr);
+
+        foreach (string option in expectedOptions)
+        {
+            Assert.Contains(option, stdout, StringComparison.Ordinal);
+        }
+    }
+
     // Why not: CliApplication の RootCommand を使わない。3 コマンドの登録はタスク 4.1 以降であり、
     // 分類の全 8 行を試すには位置引数・必須オプション・任意オプション・複数サブコマンドが揃った木が要る
     // (research §7.2 と同形の木をテスト内で組み立てる)。コマンド登録後は §8.2 の各行が実コマンドでも成立する。
@@ -789,6 +969,27 @@ public sealed class ErrorHandlingTests
         Assert.DoesNotContain('\n', trimmed);
 
         // 要件 7.1・7.7: error は空でない日本語メッセージ、code は例外種別と発生箇所から一意に決まる値。
+        ErrorOutput error = ReadErrorJson(stderr);
+        Assert.Equal(expectedCode, error.Code);
+        Assert.NotEmpty(error.Error);
+    }
+
+    // 使用法エラーの出力契約(要件 7.1・7.2・7.3 / design §8.2・§8.3)を 1 か所に固定する。
+    // AssertRuntimeError との違いは終了コードのみだが、両者を取り違える退行(実行時エラーを 2 で返す等)を
+    // 検出するために別ヘルパーとして持つ。
+    private static void AssertUsageError(string expectedCode, int exitCode, string stdout, string stderr)
+    {
+        // 要件 7.3: 使用法エラーは 2(実行時エラーの 1 と取り違えていないことも含めて固定する)。
+        Assert.Equal(ExitCodes.UsageError, exitCode);
+
+        // 要件 7.2: エラー時は stdout に何も出さない(フレームワーク既定のヘルプ出力が漏れていないこと)。
+        Assert.Empty(stdout);
+
+        // 要件 6.3 と同じ 1 行契約。末尾の改行 1 個のみを許容する。
+        string trimmed = stderr.TrimEnd('\r', '\n');
+        Assert.NotEqual(stderr, trimmed);
+        Assert.DoesNotContain('\n', trimmed);
+
         ErrorOutput error = ReadErrorJson(stderr);
         Assert.Equal(expectedCode, error.Code);
         Assert.NotEmpty(error.Error);

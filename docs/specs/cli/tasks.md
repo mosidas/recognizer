@@ -98,7 +98,7 @@
     - 設計参照: design.md §6 ClassNamesFile(契約と異常系。**素の `FileNotFoundException` を漏らさない** = `modelNotFound` と誤判定される)、§8.1 の順 1
     - 検証コマンド: `dotnet test --filter FullyQualifiedName~Recognizer.Cli.Tests`(クラス名の解決・行数不一致でエラーにしないこと・ファイル不在が `classesFileNotFound` になりモデル不在と区別されることを個別にテストする)
 
-- [ ] 6. compare-face コマンドと、3 コマンド出揃い後の使用法エラーの実経路検証
+- [x] 6. compare-face コマンドと、3 コマンド出揃い後の使用法エラーの実経路検証
   - [x] 6.1 compare-face の 3 つの status(Success / NoFaceInImage1 / NoFaceInImage2)を実装する
         _Requirements: 2.1, 2.2, 2.3, 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 5.7, 5.8, 8.1, 8.3_
         _Boundary: Commands_
@@ -106,7 +106,7 @@
     - 対象ファイル: `src/Recognizer.Cli/Commands/CompareFaceCommand.cs`(新規)、`src/Recognizer.Cli/CliApplication.cs`(変更: コマンド登録)、`src/Recognizer.Cli/Output/OutputDtos.cs`(変更)、`tests/Recognizer.Cli.Tests/CompareFaceCommandTests.cs`(新規)
     - 設計参照: design.md §5 の 5.1〜5.8 行(**NoFaceInImage1 では face1 / face2 とも null**)、§9.3(`face_inputconf_f5` + `embed_nchw_meanrgb_d4`、白/黒画像で status を作り分ける)
     - 検証コマンド: `dotnet test --filter FullyQualifiedName~CompareFaceCommandTests`(3 つの status を個別にテストする。`--detection-threshold` の既定値 0.7 を含む)
-  - [ ] 6.2 使用法エラーと `--help` を実コマンド経路で検証する(3 コマンドが出揃った後にしか成立しない検証)
+  - [x] 6.2 使用法エラーと `--help` を実コマンド経路で検証する(3 コマンドが出揃った後にしか成立しない検証)
         _Requirements: 2.4, 2.5, 2.6, 2.7, 8.2_
         _Boundary: Errors_
         _Depends: 6.1_
