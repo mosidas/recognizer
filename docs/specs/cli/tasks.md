@@ -51,7 +51,7 @@
     - 対象ファイル: `src/Recognizer.Cli/Commands/ThresholdOption.cs`(新規)、`src/Recognizer.Cli/Errors/UsageErrorCollector.cs`(新規)、`tests/Recognizer.Cli.Tests/ErrorHandlingTests.cs`(変更)
     - 設計参照: design.md §6 ThresholdOption(**`Validators` は使わない。`CustomParser` を使う**。値域判定は `!(v >= 0f && v <= 1f)` と書く = NaN を弾く)
     - 検証コマンド: `dotnet test --filter FullyQualifiedName~ErrorHandlingTests`(`abc` / `1.5` / `NaN` / 値なし の 4 分岐をそれぞれテストする)
-  - [ ] 3.3 使用法エラーの構造的分類を実装する
+  - [x] 3.3 使用法エラーの構造的分類を実装する
         _Requirements: 2.4, 2.5, 7.8_
         _Boundary: Errors_
         _Depends: 3.2_

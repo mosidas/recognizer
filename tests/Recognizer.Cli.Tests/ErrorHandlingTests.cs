@@ -307,6 +307,147 @@ public sealed class ErrorHandlingTests
         }
     }
 
+    // design §8.2 の 8 行を上から順に 1 ケース以上で覆う(要件 2.4・2.5・7.8: code が一意に決まること)。
+    [Theory]
+    // 順 1: 解釈不能な値(collector の記録が最優先)
+    [InlineData(ErrorCodes.InvalidOptionValue, new[] { "detect-face", "a.jpg", "--model", "m.onnx", "--confidence", "abc" })]
+    // 順 2: 値域外
+    [InlineData(ErrorCodes.OptionValueOutOfRange, new[] { "detect-face", "a.jpg", "--model", "m.onnx", "--confidence", "1.5" })]
+    // 順 3: 位置引数の過剰 / 未知オプション / 未知コマンド(いずれも UnmatchedTokens に載る)
+    [InlineData(ErrorCodes.UnrecognizedArgument, new[] { "detect-face", "a.jpg", "b.jpg", "--model", "m.onnx" })]
+    [InlineData(ErrorCodes.UnrecognizedArgument, new[] { "detect-face", "a.jpg", "--model", "m.onnx", "--nosuch" })]
+    [InlineData(ErrorCodes.UnrecognizedArgument, new[] { "nosuch" })]
+    // 順 4: 必須オプションの欠落と、必須オプションを値なしで書いた場合
+    [InlineData(ErrorCodes.MissingRequiredOption, new[] { "detect-face", "a.jpg" })]
+    [InlineData(ErrorCodes.MissingRequiredOption, new[] { "detect-face", "a.jpg", "--model" })]
+    // 順 5: 必須でないオプションの値欠落(CustomParser は呼ばれない = collector は空)
+    [InlineData(ErrorCodes.InvalidOptionValue, new[] { "detect-face", "a.jpg", "--model", "m.onnx", "--confidence" })]
+    // 順 6: 位置引数の不足
+    [InlineData(ErrorCodes.MissingArgument, new[] { "detect-face", "--model", "m.onnx" })]
+    // 順 7: コマンド未指定
+    [InlineData(ErrorCodes.MissingCommand, new string[0])]
+    // 順 8: 上記のいずれにも当たらない使用法エラー(同一オプションの重複指定)
+    [InlineData(ErrorCodes.InvalidUsage, new[] { "detect-face", "a.jpg", "--model", "m.onnx", "--confidence", "0.5", "--confidence", "abc" })]
+    public void Classify_使用法エラーはdesignの分類表どおりのcodeになる(string expectedCode, string[] args)
+    {
+        UsageErrorCollector collector = new();
+        RootCommand root = BuildFullRoot(collector);
+
+        ParseResult parseResult = root.Parse(args);
+        Assert.NotEmpty(parseResult.Errors);
+
+        ErrorOutput output = UsageErrorClassifier.Classify(parseResult, collector);
+
+        Assert.Equal(expectedCode, output.Code);
+        Assert.NotEmpty(output.Error);
+    }
+
+    // design §8.2 順 4 の回帰テスト: 述語から Option.Required を落とすと、必須でない --confidence の値欠落が
+    // missingRequiredOption に誤分類される(設計レビューで検出された欠陥)。構造が必須オプションの欠落と
+    // 同一(OptionResult + トークン 0 件)であるため、Required で区別しなければ区別がつかない。
+    [Theory]
+    [InlineData("--confidence")]  // 値なし指定
+    [InlineData("--confidence=")] // 等号の後が空(実測でも CustomParser は呼ばれず、トークン 0 件になる)
+    public void Classify_必須でないオプションの値欠落はMissingRequiredOptionにならない(string token)
+    {
+        UsageErrorCollector collector = new();
+        RootCommand root = BuildFullRoot(collector);
+
+        ParseResult parseResult = root.Parse(["detect-face", "a.jpg", "--model", "m.onnx", token]);
+
+        Assert.Empty(collector.Errors);
+        ErrorOutput output = UsageErrorClassifier.Classify(parseResult, collector);
+
+        Assert.NotEqual(ErrorCodes.MissingRequiredOption, output.Code);
+        Assert.Equal(ErrorCodes.InvalidOptionValue, output.Code);
+        Assert.Contains("--confidence", output.Error, StringComparison.Ordinal);
+    }
+
+    // 要件 7.8: 複数種別が同時に起きても code は一意に決まる(先に一致した行を採用する)。
+    [Theory]
+    // 必須オプション欠落(順 4)+ 位置引数不足(順 6)→ 順 4
+    [InlineData(ErrorCodes.MissingRequiredOption, new[] { "detect-face" })]
+    // 未知コマンドは UnmatchedTokens(順 3)と RootCommand(順 7)の両方に一致する → 順 3
+    [InlineData(ErrorCodes.UnrecognizedArgument, new[] { "nosuch", "a.jpg" })]
+    // 値の解釈不能(順 1)+ 未知オプション(順 3)→ 順 1
+    [InlineData(ErrorCodes.InvalidOptionValue, new[] { "detect-face", "a.jpg", "--model", "m.onnx", "--confidence", "abc", "--nosuch" })]
+    public void Classify_複数種別が同時に起きてもcodeは一意に決まる(string expectedCode, string[] args)
+    {
+        UsageErrorCollector collector = new();
+        RootCommand root = BuildFullRoot(collector);
+
+        ParseResult parseResult = root.Parse(args);
+
+        Assert.Equal(expectedCode, UsageErrorClassifier.Classify(parseResult, collector).Code);
+    }
+
+    // design §8.2 順 1 が順 2 より先: 解釈不能と値域外が同時に記録された場合は invalidOptionValue。
+    [Fact]
+    public void Classify_解釈不能と値域外が同時なら解釈不能を採用する()
+    {
+        UsageErrorCollector collector = new();
+        RootCommand root = BuildFullRoot(collector);
+
+        // --nms が値域外(順 2)、--confidence が解釈不能(順 1)。記録順は値域外が先。
+        ParseResult parseResult = root.Parse(
+            ["detect-face", "a.jpg", "--model", "m.onnx", "--nms", "1.5", "--confidence", "abc"]);
+
+        Assert.Equal(2, collector.Errors.Count);
+        ErrorOutput output = UsageErrorClassifier.Classify(parseResult, collector);
+
+        Assert.Equal(ErrorCodes.InvalidOptionValue, output.Code);
+        Assert.Contains("abc", output.Error, StringComparison.Ordinal);
+    }
+
+    // 順 1・2 のメッセージは CustomParser が作った日本語(指定値を含む)をそのまま使う(重複生成をしない)。
+    [Fact]
+    public void Classify_値エラーのメッセージはcollectorの記録をそのまま返す()
+    {
+        UsageErrorCollector collector = new();
+        RootCommand root = BuildFullRoot(collector);
+
+        ParseResult parseResult = root.Parse(["detect-face", "a.jpg", "--model", "m.onnx", "--confidence", "1.5"]);
+
+        ErrorOutput recorded = Assert.Single(collector.Errors);
+        Assert.Equal(recorded, UsageErrorClassifier.Classify(parseResult, collector));
+    }
+
+    // 要件 7.1: どの使用法エラーでも、日本語メッセージが当該のオプション名 / 引数名 / コマンド名を含む。
+    // Why not フレームワークの英語メッセージ(ParseError.Message)を使わない: CLAUDE.md の日本語規約に反し、
+    // 文字列一致で分類すると System.CommandLine の文言変更で壊れる(design §8.2)。
+    [Theory]
+    [InlineData(new[] { "detect-face", "a.jpg" }, "--model")]
+    [InlineData(new[] { "detect-face", "--model", "m.onnx" }, "image")]
+    [InlineData(new[] { "detect-face", "a.jpg", "b.jpg", "--model", "m.onnx" }, "b.jpg")]
+    [InlineData(new string[0], "detect-face")]
+    public void Classify_メッセージは対象の識別子を含む日本語になる(string[] args, string expectedFragment)
+    {
+        UsageErrorCollector collector = new();
+        RootCommand root = BuildFullRoot(collector);
+
+        ErrorOutput output = UsageErrorClassifier.Classify(root.Parse(args), collector);
+
+        Assert.Contains(expectedFragment, output.Error, StringComparison.Ordinal);
+        Assert.DoesNotContain("Required", output.Error, StringComparison.Ordinal);
+        Assert.DoesNotContain("Unrecognized", output.Error, StringComparison.Ordinal);
+    }
+
+    // CliApplication は未実装(タスク 3.4)のため、コマンドをテスト内で直接組み立てて Parse する(research §7.2 と同形)。
+    // 分類の全 8 行を試すには、位置引数・必須オプション・任意オプション・複数サブコマンドが揃った木が要る。
+    private static RootCommand BuildFullRoot(UsageErrorCollector collector)
+    {
+        Command detectFace = new("detect-face")
+        {
+            new Argument<string>("image"),
+            new Option<string>("--model") { Required = true },
+            ThresholdOption.Create("--confidence", 0.7f, collector),
+            ThresholdOption.Create("--nms", 0.5f, collector),
+        };
+
+        // compare-face は「コマンド未指定」の案内メッセージが複数コマンドを列挙することの検証にのみ使う。
+        return new RootCommand { detectFace, new Command("compare-face") };
+    }
+
     // CliApplication は未実装(タスク 3.4)のため、コマンドをテスト内で直接組み立てて Parse する(research §7.2 と同形)。
     private static RootCommand BuildConfidenceRoot(UsageErrorCollector collector, out Option<float> confidence)
     {
