@@ -130,8 +130,8 @@
     - 設計参照: design.md §10.2(`dotnet test` は変更不要。publish のみ 1 行追加)
     - 検証コマンド: YAML の妥当性を `python3 -c "import yaml; yaml.safe_load(open('.github/workflows/ci.yml'))"` で確認し、追加したステップと同じコマンド(`dotnet publish src/Recognizer.Cli/Recognizer.Cli.csproj -c Release -r linux-x64 -o /tmp/ci-check`)がローカルで成功することを確認する。3 プラットフォームの実機検証は CI に委ねる
 
-- [ ] 8. 恒久情報への反映
-  - [ ] 8.1 README に CLI の使い方を追記する
+- [x] 8. 恒久情報への反映
+  - [x] 8.1 README に CLI の使い方を追記する
         _Requirements: 10.1, 10.2, 10.3_
         _Boundary: Docs_
         _Depends: 7.1_
