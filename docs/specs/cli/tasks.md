@@ -115,7 +115,7 @@
     - 検証コマンド: `dotnet test --filter FullyQualifiedName~ErrorHandlingTests`。次を実コマンドで検証する: (a) 3 コマンドそれぞれの必須オプション欠落(`--model` / `--detector-model` / `--embedding-model`)、(b) **`--confidence 1.5` を存在しないモデルパスと併用しても終了コード 2(使用法エラー)であり 1(モデル不在)にならないこと = ライブラリを呼んでいない**(要件 2.6)、(c) 位置引数の過不足・未知のコマンド/オプション、(d) `--help` が終了コード 0 で 3 コマンドを列挙すること
 
 - [ ] 7. 配布(publish)と CI
-  - [ ] 7.1 publish 設定を仕上げ、linux-x64 の実バイナリでスモーク検証する
+  - [x] 7.1 publish 設定を仕上げ、linux-x64 の実バイナリでスモーク検証する
         _Requirements: 9.1, 9.2, 9.3_
         _Boundary: Recognizer.Cli_
         _Depends: 6.1_
