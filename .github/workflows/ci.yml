@@ -37,3 +37,6 @@ jobs:
       # devcontainer(linux/amd64)では win/osx のネイティブ資産解決を実機確認できないため、
       # 各ランナーで実 RID の publish を通してローカル検証を裏取りする(要件 1.2)
       - run: dotnet publish src/Recognizer/Recognizer.csproj -c Release -r ${{ matrix.rid }} -o publish-${{ matrix.rid }}
+      # CLI は自己完結の単一実行ファイルとして 3 RID すべてで publish できる必要がある(cli 要件 9.1・9.2)。
+      # devcontainer では linux-x64 しか検証できないため、win/osx の成否はここでしか分からない
+      - run: dotnet publish src/Recognizer.Cli/Recognizer.Cli.csproj -c Release -r ${{ matrix.rid }} -o publish-cli-${{ matrix.rid }}

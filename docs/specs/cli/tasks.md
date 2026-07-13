@@ -114,7 +114,7 @@
     - 設計参照: design.md §8.2(判定順序 8 行)、§9.3 の「閾値がライブラリに渡らないこと」「`--help`」の各行
     - 検証コマンド: `dotnet test --filter FullyQualifiedName~ErrorHandlingTests`。次を実コマンドで検証する: (a) 3 コマンドそれぞれの必須オプション欠落(`--model` / `--detector-model` / `--embedding-model`)、(b) **`--confidence 1.5` を存在しないモデルパスと併用しても終了コード 2(使用法エラー)であり 1(モデル不在)にならないこと = ライブラリを呼んでいない**(要件 2.6)、(c) 位置引数の過不足・未知のコマンド/オプション、(d) `--help` が終了コード 0 で 3 コマンドを列挙すること
 
-- [ ] 7. 配布(publish)と CI
+- [x] 7. 配布(publish)と CI
   - [x] 7.1 publish 設定を仕上げ、linux-x64 の実バイナリでスモーク検証する
         _Requirements: 9.1, 9.2, 9.3_
         _Boundary: Recognizer.Cli_
@@ -122,7 +122,7 @@
     - 対象ファイル: `src/Recognizer.Cli/Recognizer.Cli.csproj`(変更)
     - 設計参照: design.md §10.1(publish 設定の表。トリミングはしない)、§9.4(スモーク検証の手順。結果を Implementation Notes に記録する)
     - 検証コマンド: `dotnet publish src/Recognizer.Cli/Recognizer.Cli.csproj -c Release -r linux-x64 -o /tmp/cli-publish` の後、生成された実行ファイルで 3 コマンドとエラー 2 系統(実行時・使用法)を実行し、JSON と終了コード(0 / 1 / 2)を確認する。**加えて、画像不在エラーの stderr が 1 行でありそのまま JSON としてパースできることを検査する**(OpenCV ネイティブログ抑止の回帰。インプロセステストでは捕捉できないため、ここが唯一の検出点。design §9.4)
-  - [ ] 7.2 CI に CLI の publish ステップを追加する
+  - [x] 7.2 CI に CLI の publish ステップを追加する
         _Requirements: 9.2_
         _Boundary: CI_
         _Depends: 7.1_
