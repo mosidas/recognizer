@@ -45,6 +45,11 @@ public sealed class CliTestHost : IDisposable
     // 同 fixture において黒画像は confidence 0 = 「顔なし」を作る(research §4)。
     public string CreateBlackImage() => CreateImage(Scalar.All(0));
 
+    /// <summary>一様なグレー画像(640x640)の一時 PNG を生成し、そのパスを返す。</summary>
+    // face_inputconf_f5.onnx の conf は前処理(/255)後の入力平均なので、画素値 <paramref name="level"/> の
+    // 一様画像は conf ≒ level / 255 になる(前処理のリサイズで厳密には一致しない。153 → 実測 0.6009)。閾値の既定値をまたぐ中間の conf を作れる。
+    public string CreateGrayImage(byte level) => CreateImage(Scalar.All(level));
+
     /// <summary>画像として読み込めない一時ファイルを生成し、そのパスを返す。</summary>
     // 拡張子を呼び出し側が選べるようにしてある(壊れた ONNX を `.onnx` で作るなど)。
     public string CreateNonImageFile(string extension = ".png")

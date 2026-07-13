@@ -99,7 +99,7 @@
     - 検証コマンド: `dotnet test --filter FullyQualifiedName~Recognizer.Cli.Tests`(クラス名の解決・行数不一致でエラーにしないこと・ファイル不在が `classesFileNotFound` になりモデル不在と区別されることを個別にテストする)
 
 - [ ] 6. compare-face コマンドと、3 コマンド出揃い後の使用法エラーの実経路検証
-  - [ ] 6.1 compare-face の 3 つの status(Success / NoFaceInImage1 / NoFaceInImage2)を実装する
+  - [x] 6.1 compare-face の 3 つの status(Success / NoFaceInImage1 / NoFaceInImage2)を実装する
         _Requirements: 2.1, 2.2, 2.3, 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 5.7, 5.8, 8.1, 8.3_
         _Boundary: Commands_
         _Depends: 5.1_

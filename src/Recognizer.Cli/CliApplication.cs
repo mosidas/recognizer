@@ -63,12 +63,13 @@ internal static class CliApplication
         }
     }
 
-    // compare-face の登録は後続タスクが行う。閾値オプションの CustomParser が値エラーの
-    // 記録先として collector を要するため、各コマンドは登録時に collector を受け取る。
+    // 閾値オプションの CustomParser が値エラーの記録先として collector を要するため、
+    // 各コマンドは登録時に collector を受け取る。
     private static RootCommand BuildRootCommand(UsageErrorCollector collector)
         => new("YOLO 形式の ONNX モデルで顔検出・物体検出・顔類似度を実行する CLI。")
         {
             DetectFaceCommand.Create(collector),
             DetectObjectCommand.Create(collector),
+            CompareFaceCommand.Create(collector),
         };
 }
