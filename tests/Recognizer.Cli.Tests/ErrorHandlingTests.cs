@@ -29,6 +29,11 @@ public sealed class ErrorHandlingTests
         Assert.NotEqual(ExitCodes.Success, ExitCodes.RuntimeError);
         Assert.NotEqual(ExitCodes.Success, ExitCodes.UsageError);
         Assert.NotEqual(ExitCodes.RuntimeError, ExitCodes.UsageError);
+
+        // 値そのものを固定する。1 / 2 は README と design §8.3 が利用者向けの契約として公開しており、
+        // 入れ替わるとスクリプトの分岐が静かに壊れる。定数同士の比較だけでは入れ替えを検出できない。
+        Assert.Equal(1, ExitCodes.RuntimeError);
+        Assert.Equal(2, ExitCodes.UsageError);
     }
 
     // 要件 2.7・6.1: --help は Errors 0 件で HelpAction が動き(research §7.2)、終了コード 0 で終わる。

@@ -1,4 +1,7 @@
+using System.CommandLine;
 using System.Text.Json;
+using Recognizer.Cli.Commands;
+using Recognizer.Cli.Errors;
 
 namespace Recognizer.Cli.Tests;
 
@@ -193,5 +196,25 @@ public sealed class CompareFaceCommandTests
         using JsonDocument document = JsonDocument.Parse(stdout);
 
         return document.RootElement.Clone();
+    }
+
+    // 要件 2.3: --nms の既定値は 3 コマンドすべてで 0.5。
+    // Why not 出力で検証しない: compare-face は最高信頼度の顔だけを使うため、NMS 閾値を変えても top-1 は変わらず
+    // 出力に差が出ない(detect-face / detect-object は件数が変わるので出力で固定できる)。既定値の取り違えを
+    // 検出する手段がパース結果しかないため、ここだけ構造を直接見る。
+    [Fact]
+    public void Nmsの既定値は0_5()
+    {
+        UsageErrorCollector collector = new();
+
+        RootCommand root = [];
+        root.Add(CompareFaceCommand.Create(collector));
+
+        ParseResult parseResult = root.Parse(
+            ["compare-face", "a.png", "b.png", "--detector-model", "d.onnx", "--embedding-model", "e.onnx"]);
+
+        Assert.Empty(parseResult.Errors);
+        Assert.Equal(0.5f, parseResult.GetValue<float>("--nms"));
+        Assert.Equal(0.7f, parseResult.GetValue<float>("--detection-threshold"));
     }
 }

@@ -114,6 +114,15 @@
     - 設計参照: design.md §8.2(判定順序 8 行)、§9.3 の「閾値がライブラリに渡らないこと」「`--help`」の各行
     - 検証コマンド: `dotnet test --filter FullyQualifiedName~ErrorHandlingTests`。次を実コマンドで検証する: (a) 3 コマンドそれぞれの必須オプション欠落(`--model` / `--detector-model` / `--embedding-model`)、(b) **`--confidence 1.5` を存在しないモデルパスと併用しても終了コード 2(使用法エラー)であり 1(モデル不在)にならないこと = ライブラリを呼んでいない**(要件 2.6)、(c) 位置引数の過不足・未知のコマンド/オプション、(d) `--help` が終了コード 0 で 3 コマンドを列挙すること
 
+- [x] 6.3 (最終検証パネルの NO-GO に対する修正タスク)実プロセスの stderr を検証するテストを追加する
+        _Requirements: 7.1, 7.2, 8.2_
+        _Boundary: Recognizer.Cli.Tests_
+        _Depends: 6.2_
+    - 対象ファイル: `tests/Recognizer.Cli.Tests/ProcessSmokeTests.cs`(新規)、`docs/specs/cli/design.md`(§8.1・§9.4 の誤った前提を訂正)
+    - 背景: 最終検証(test 観点)で、`Program.SilenceOpenCvNativeLog()` の呼び出しを削除しても **375 件すべてグリーンのまま**であることが判明した(OpenCV ネイティブの警告は fd 2 に直接書かれ、インプロセステストの `StringWriter` では観測できない)。要件 7.1 の「stderr は機械可読な 1 行 JSON」という中核契約が、テストで守られていない。
+    - **design §8.1 / §9.4 の「インプロセスでは捕捉できない → publish スモークが唯一の検出点」という前提は誤り**。CLI を**実プロセスとして起動**すれば(`dotnet <テスト出力>/Recognizer.Cli.dll ...`)実 stderr を捕捉でき、publish なしでテストにできる。CI の publish ステップは成果物を**実行しない**ため、回帰ガードとして機能していなかった。
+    - 検証コマンド: `dotnet test --filter FullyQualifiedName~ProcessSmokeTests`。**`SilenceOpenCvNativeLog()` の呼び出しを削除する変異でこのテストが落ちること**を /tmp の複製で確認する(落ちなければ意味がない)
+
 - [x] 7. 配布(publish)と CI
   - [x] 7.1 publish 設定を仕上げ、linux-x64 の実バイナリでスモーク検証する
         _Requirements: 9.1, 9.2, 9.3_
