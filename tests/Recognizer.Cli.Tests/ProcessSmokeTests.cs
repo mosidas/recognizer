@@ -105,10 +105,22 @@ public sealed class ProcessSmokeTests
         using Process process = Process.Start(startInfo)
             ?? throw new InvalidOperationException("CLI プロセスを起動できませんでした。");
 
+        // Why: 先に非同期で読み始めてから待つ。逆順にするとパイプが埋まった時点で相互に待ち合ってデッドロックする。
         Task<string> stdout = process.StandardOutput.ReadToEndAsync();
         Task<string> stderr = process.StandardError.ReadToEndAsync();
 
-        await process.WaitForExitAsync();
+        // Why: タイムアウトを持たせる。CLI がハングしたとき、テストが落ちずに CI ジョブ全体の
+        // タイムアウト(20 分)まで固まると、原因の切り分けができない。
+        using CancellationTokenSource timeout = new(TimeSpan.FromMinutes(2));
+        try
+        {
+            await process.WaitForExitAsync(timeout.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            process.Kill(entireProcessTree: true);
+            Assert.Fail("CLI プロセスが 2 分以内に終了しませんでした。");
+        }
 
         return (process.ExitCode, await stdout, await stderr);
     }
