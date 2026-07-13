@@ -53,4 +53,4 @@ dotnet test
 ## 注意事項
 
 - ONNX モデルファイルはリポジトリに含めない(`models/*.onnx` は gitignore 済み)
-- devcontainer は linux/amd64(Apple Silicon では Rosetta エミュレーション)で動作する。OpenCvSharp の公式ネイティブランタイムが linux-arm64 非対応のため
+- devcontainer は linux/amd64(Apple Silicon では Rosetta エミュレーション)で動作する。本リポジトリが検証対象とする RID は linux-x64 / win-x64 / osx-arm64 の 3 つであり、linux-arm64 は対象外のため

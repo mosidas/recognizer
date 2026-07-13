@@ -11,6 +11,10 @@
     <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.27.1" />
     <PackageReference Include="OpenCvSharp4" Version="4.13.0.20260627" />
     <PackageReference Include="OpenCvSharp4.official.runtime.linux-x64" Version="4.13.0.20260627" />
+    <!-- Why not: Windows 版の公式 ID は linux 版と非対称で、official も -x64 も付かない。対称性を求めて OpenCvSharp4.official.runtime.win-x64 に「統一」すると、そのような ID は存在せず復元に失敗する -->
+    <PackageReference Include="OpenCvSharp4.runtime.win" Version="4.13.0.20260627" />
+    <!-- Why: osx-arm64 だけサードパーティ(sdcb)なのは、OpenCvSharp 公式が osx-arm64 の現行版(4.13 系)ランタイムを提供しておらず(公式 macOS パッケージは 4.6.0 / x64 で更新停止)、Apple Silicon 対応の現行選択肢がこれのみのため。ライセンスは本体と同じ Apache-2.0。撤退条件は design §10.1(要件 2.3) -->
+    <PackageReference Include="Sdcb.OpenCvSharp4.mini.runtime.osx-arm64" Version="4.13.0.45" />
   </ItemGroup>
 
   <ItemGroup>

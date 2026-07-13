@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# ビルドとテストのみで書き込みを伴わないため、既定より絞った最小権限にする
+permissions:
+  contents: read
+
+jobs:
+  test:
+    timeout-minutes: 20
+    strategy:
+      # 1 ジョブの失敗で他を打ち切らず、全プラットフォームの結果を得る(要件 5.6。既定は true のため明示が必須)
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            rid: linux-x64
+          - os: windows-latest
+            rid: win-x64
+          # Apple Silicon(arm64)ランナー。macos-14 も arm64 だが deprecated のため使わない
+          - os: macos-15
+            rid: osx-arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+      - run: dotnet build --configuration Release
+      # 直前の build 成果物を使い、ビルドの二重実行を避ける
+      - run: dotnet test --configuration Release --no-build
+      # devcontainer(linux/amd64)では win/osx のネイティブ資産解決を実機確認できないため、
+      # 各ランナーで実 RID の publish を通してローカル検証を裏取りする(要件 1.2)
+      - run: dotnet publish src/Recognizer/Recognizer.csproj -c Release -r ${{ matrix.rid }} -o publish-${{ matrix.rid }}

@@ -24,12 +24,19 @@ public sealed class PublicApiTests
         "Recognizer.FaceEmbeddingResult",
     ];
 
-    // 依存を許可するパッケージ(要件 5.4)。OS 向け runtime パッケージを含む。
+    // 依存を許可するパッケージ(face-detection 要件 5.4 / multi-platform 要件 7.1)。
+    // ONNX Runtime と画像処理バックエンド、およびその RID 別ランタイムパッケージに限定する。
+    // なぜ RID 別ランタイムが 3 件あるか: linux-x64 / win-x64 / osx-arm64 の 3 プラットフォームを
+    // 無条件参照で解決するため(multi-platform 要件 1.1)。win の公式パッケージ ID に
+    // official/-x64 が付かないこと、osx-arm64 のみサードパーティ(Sdcb)であることは
+    // 供給元の実態によるもので、命名の不統一ではない。
     private static readonly string[] AllowedPackageReferences =
     [
         "Microsoft.ML.OnnxRuntime",
         "OpenCvSharp4",
         "OpenCvSharp4.official.runtime.linux-x64",
+        "OpenCvSharp4.runtime.win",
+        "Sdcb.OpenCvSharp4.mini.runtime.osx-arm64",
     ];
 
     // face-detection 5.1 / object-detection 6.1 / face-recognition 7.1: 公開型は Recognizer 名前空間の 9 型に厳密に限定される。
@@ -110,10 +117,12 @@ public sealed class PublicApiTests
         Assert.Empty(offending);
     }
 
-    // 5.4: 依存パッケージは許可された 3 パッケージ(OnnxRuntime / OpenCvSharp4 / OS runtime)のみ。
+    // face-detection 5.4 / multi-platform 4.3・7.1: 依存パッケージは許可された 5 パッケージ
+    // (OnnxRuntime / OpenCvSharp4 / RID 別ランタイム 3 件)のみ。集合の厳密一致で検査するため、
+    // 許可リストにない追加も、いずれかの RID 別ランタイムの欠落も、どちらも失敗として検出できる。
     // csproj を XML として読み、リポジトリルート起点でパスを解決してパス依存を排除する。
     [Fact]
-    public void Csproj_依存パッケージは許可された3つのみ()
+    public void Csproj_依存パッケージは許可された5つのみ()
     {
         string csprojPath = Path.Combine(FindRepositoryRoot(), "src", "Recognizer", "Recognizer.csproj");
         XDocument doc = XDocument.Load(csprojPath);

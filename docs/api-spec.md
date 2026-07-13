@@ -21,8 +21,22 @@ YOLO 形式の ONNX モデルファイルで動作する、顔検出・顔認証
 | --- | --- |
 | フレームワーク | .NET 10(`net10.0`)、C# クラスライブラリ |
 | 推論 | Microsoft.ML.OnnxRuntime(CPU。実行プロバイダの追加はスコープ外) |
-| 画像処理 | OpenCvSharp4 |
-| 動作環境 | Windows / macOS / Linux(devcontainer は linux/amd64) |
+| 画像処理 | OpenCvSharp4(+ RID 別ネイティブランタイムパッケージ 3 件。下表を参照) |
+| 動作環境 | `linux-x64` / `win-x64` / `osx-arm64` の 3 RID(devcontainer は linux/amd64 = `linux-x64`) |
+
+依存パッケージは以下の 5 件に限る。
+
+| パッケージ ID | 供給元 | 対象 RID |
+| --- | --- | --- |
+| `Microsoft.ML.OnnxRuntime` | Microsoft(公式) | 全 RID(1 パッケージに同梱) |
+| `OpenCvSharp4` | shimat(公式) | マネージド(RID 非依存) |
+| `OpenCvSharp4.official.runtime.linux-x64` | shimat(公式) | linux-x64 |
+| `OpenCvSharp4.runtime.win` | shimat(公式) | win-x64 |
+| `Sdcb.OpenCvSharp4.mini.runtime.osx-arm64` | sdcb(サードパーティ) | osx-arm64 |
+
+- Windows のパッケージ ID は Linux 版と非対称で、`official` も `-x64` も付かない。上表の綴りが正であり、対称性を求めて改名すると存在しない ID となり復元に失敗する。
+- osx-arm64 のランタイムのみサードパーティ(sdcb)である。OpenCvSharp 公式が osx-arm64 の現行版(4.13 系)ランタイムを提供しておらず(公式 macOS パッケージは 4.6.0 / x64 で更新停止)、Apple Silicon 対応の現行選択肢がこれのみのため。ライセンスは本体と同じ Apache-2.0。
+- 3 つのランタイムパッケージは無条件に参照する。RID 未指定のビルドではホストの RID で解決され、`dotnet publish -r <RID>` では**これら 3 パッケージのネイティブ資産**は対象 RID のもののみが配置される(ONNX Runtime のネイティブはこの限りでない。クラスライブラリを単体で publish した場合、ONNX Runtime の MSBuild targets が Windows 用 DLL を RID 非依存で複製する。ライブラリを参照するアプリケーションの publish では複製されず、実害はない)。
 
 ## 3. 公開 API
 
@@ -177,4 +191,4 @@ docs/                    本仕様書・SDD 成果物
 
 - ライブラリはコンソール出力・ログ出力をしない(ロギング機構の導入はスコープ外)。
 - 内部実装(前処理・テンソル変換・NMS・出力パース)は公開しない(`internal`)。
-- 依存パッケージは Microsoft.ML.OnnxRuntime、OpenCvSharp4(+ 各 OS 向け runtime パッケージ)に限る。
+- 依存パッケージは ONNX Runtime(`Microsoft.ML.OnnxRuntime`)と画像処理バックエンド(`OpenCvSharp4`)、およびその RID 別ネイティブランタイムパッケージ 3 件(`OpenCvSharp4.official.runtime.linux-x64` / `OpenCvSharp4.runtime.win` / `Sdcb.OpenCvSharp4.mini.runtime.osx-arm64`)の計 5 件に限る(§2 の表)。これ以外の依存追加は本仕様の変更を伴う。
