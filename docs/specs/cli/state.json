@@ -1,0 +1,17 @@
+{
+  "workflow": "sdd",
+  "unit": "cli",
+  "state": "completed",
+  "approvals": {
+    "requirements": true,
+    "design": true,
+    "tasks": true
+  },
+  "created": "2026-07-13",
+  "updated": "2026-07-13",
+  "frozen": {
+    "requirements.md": "19fc2b8a3c2a788481e5beccaedc4ce7a43af627773f5ec1c6dfb596fca0cddb",
+    "design.md": "ed6ed85d3d9a64c5ddebb48f1adfff134957cf7528ebce4f85f3a7573f14ff28",
+    "tasks.md": "d089b7a6a8854db9727a8622fe42ecff595c9f44a7700d702ff33b6056bd5996"
+  }
+}

@@ -1,0 +1,70 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Recognizer.Cli</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <!-- publish 対象の 3 RID(要件 9.2)。ライブラリと同じ RID を揃える -->
+    <RuntimeIdentifiers>linux-x64;win-x64;osx-arm64</RuntimeIdentifiers>
+    <!-- 出力の invariant 性(要件 6.4)を環境非依存にし、ICU 依存を落とす -->
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <!--
+      Why not AssemblyName=recognizer(design §10.1 の字義どおりの設定):
+      .NET のアセンブリ ID は大文字小文字を区別しないため、アセンブリ名 recognizer は
+      ライブラリ アセンブリ Recognizer と同一 ID とみなされ、両者は共存できない。実測で、
+        - restore が "Ambiguous project name 'recognizer'" で失敗する
+        - 参照解決が一方を破棄し、テストから CLI の型が消える(CS0234)
+        - publish しても実行時に TypeLoadException(Recognizer.* の型を entry assembly から探す)
+      となる。よってアセンブリ名は Recognizer.Cli のままとし、design §10.1 が求める
+      「実行ファイル名 recognizer」は publish 後のホストのリネームで実現する(下の Target)。
+    -->
+  </PropertyGroup>
+
+  <!--
+    配布(publish)専用の設定。RID 指定時(= dotnet publish -r <rid>)のみ有効にする。
+    Why 条件付き: SelfContained を無条件に置くと RID 未指定の dotnet build でも暗黙 RID が解決され、
+    出力先が bin/<Config>/net10.0/<rid>/ に移動する。RID 無しでビルドされるテストプロジェクトから
+    ProjectReference を解決できなくなり、dotnet build / dotnet test が壊れる(実測)。
+  -->
+  <PropertyGroup Condition="'$(RuntimeIdentifier)' != ''">
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <!-- OnnxRuntime / OpenCvSharp のネイティブ資産を単一ファイルに含める -->
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <!-- Why not PublishTrimmed: OnnxRuntime / OpenCvSharp はリフレクションとネイティブ相互運用を含み、
+         トリミングは実行時破損のリスクがある。単一ファイルのサイズより確実性を優先する(design §10.1) -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.CommandLine" Version="2.0.9" />
+    <!-- 画像処理には使わない。OpenCV ネイティブの警告が stderr の JSON を汚すのを止めるためだけに参照する(Program.SilenceOpenCvNativeLog)。 -->
+    <PackageReference Include="OpenCvSharp4" Version="4.13.0.20260627" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Recognizer\Recognizer.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Why: CLI の internal 部品(CliApplication・出力 DTO・エラー分類)をテストから直接検証するため(design §9.1) -->
+    <InternalsVisibleTo Include="Recognizer.Cli.Tests" />
+  </ItemGroup>
+
+  <!--
+    publish された実行ファイル(apphost)を recognizer / recognizer.exe にリネームする(design §10.1)。
+    アセンブリ名は Recognizer.Cli のままなので、ライブラリ Recognizer とアセンブリ ID が衝突しない。
+    単一ファイルのバンドルは自身のファイル名に依存しない(内容は apphost に埋め込まれている)ため、
+    リネーム後も動作する(linux-x64 の実バイナリで検証済み)。
+  -->
+  <Target Name="RenamePublishedHost" AfterTargets="Publish" Condition="'$(RuntimeIdentifier)' != ''">
+    <PropertyGroup>
+      <_HostExtension Condition="$(RuntimeIdentifier.StartsWith('win'))">.exe</_HostExtension>
+    </PropertyGroup>
+    <Move SourceFiles="$(PublishDir)$(AssemblyName)$(_HostExtension)"
+          DestinationFiles="$(PublishDir)recognizer$(_HostExtension)" />
+  </Target>
+
+</Project>

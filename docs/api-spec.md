@@ -24,7 +24,7 @@ YOLO 形式の ONNX モデルファイルで動作する、顔検出・顔認証
 | 画像処理 | OpenCvSharp4(+ RID 別ネイティブランタイムパッケージ 3 件。下表を参照) |
 | 動作環境 | `linux-x64` / `win-x64` / `osx-arm64` の 3 RID(devcontainer は linux/amd64 = `linux-x64`) |
 
-依存パッケージは以下の 5 件に限る。
+ライブラリ(`src/Recognizer`)の依存パッケージは以下の 5 件に限る。この制約はライブラリに掛かるものであり、CLI(`src/Recognizer.Cli`)には掛からない(下記「CLI の依存」を参照)。
 
 | パッケージ ID | 供給元 | 対象 RID |
 | --- | --- | --- |
@@ -37,6 +37,17 @@ YOLO 形式の ONNX モデルファイルで動作する、顔検出・顔認証
 - Windows のパッケージ ID は Linux 版と非対称で、`official` も `-x64` も付かない。上表の綴りが正であり、対称性を求めて改名すると存在しない ID となり復元に失敗する。
 - osx-arm64 のランタイムのみサードパーティ(sdcb)である。OpenCvSharp 公式が osx-arm64 の現行版(4.13 系)ランタイムを提供しておらず(公式 macOS パッケージは 4.6.0 / x64 で更新停止)、Apple Silicon 対応の現行選択肢がこれのみのため。ライセンスは本体と同じ Apache-2.0。
 - 3 つのランタイムパッケージは無条件に参照する。RID 未指定のビルドではホストの RID で解決され、`dotnet publish -r <RID>` では**これら 3 パッケージのネイティブ資産**は対象 RID のもののみが配置される(ONNX Runtime のネイティブはこの限りでない。クラスライブラリを単体で publish した場合、ONNX Runtime の MSBuild targets が Windows 用 DLL を RID 非依存で複製する。ライブラリを参照するアプリケーションの publish では複製されず、実害はない)。
+
+### CLI の依存
+
+CLI(`src/Recognizer.Cli`)はライブラリを `ProjectReference` し、加えて CLI 固有の依存を持つ。上表の 5 件はライブラリに掛かる制約であり、以下は仕様違反ではない。
+
+| パッケージ ID | 用途 |
+| --- | --- |
+| `System.CommandLine` | コマンドライン解析 |
+| `OpenCvSharp4` | 画像処理には使わない。OpenCV ネイティブの警告が stderr の JSON 出力を汚すのを止めるためだけに参照する |
+
+`OpenCvSharp4` は既にライブラリの 5 件の 1 つであり、依存グラフに新しいパッケージは増えていない。CLI の導入で実質的に増えた依存は `System.CommandLine` のみである。
 
 ## 3. 公開 API
 
@@ -179,11 +190,15 @@ public sealed record ObjectDetection(int ClassId, string ClassName, float Confid
 ## 4. リポジトリ構成
 
 ```
-src/Recognizer/          クラスライブラリ本体
-tests/Recognizer.Tests/  xUnit テスト
-models/                  ONNX モデル置き場(gitignore 済み、実モデルはコミットしない)
-docs/                    本仕様書・SDD 成果物
+src/Recognizer/              クラスライブラリ本体
+src/Recognizer.Cli/          CLI(ライブラリを参照するコンソールアプリケーション)
+tests/Recognizer.Tests/      xUnit テスト(ライブラリ)
+tests/Recognizer.Cli.Tests/  xUnit テスト(CLI)
+models/                      ONNX モデル置き場(gitignore 済み、実モデルはコミットしない)
+docs/                        本仕様書・SDD 成果物
 ```
+
+- 本書はライブラリの公開 API 仕様を定める。CLI の使い方(コマンド・オプション・出力形式)は `README.md` を参照する。
 
 - テストで実モデルが必要な場合の扱い(小型ダミー ONNX の生成・実モデルのダウンロード手順等)は設計フェーズで確定する。
 
@@ -191,4 +206,5 @@ docs/                    本仕様書・SDD 成果物
 
 - ライブラリはコンソール出力・ログ出力をしない(ロギング機構の導入はスコープ外)。
 - 内部実装(前処理・テンソル変換・NMS・出力パース)は公開しない(`internal`)。
-- 依存パッケージは ONNX Runtime(`Microsoft.ML.OnnxRuntime`)と画像処理バックエンド(`OpenCvSharp4`)、およびその RID 別ネイティブランタイムパッケージ 3 件(`OpenCvSharp4.official.runtime.linux-x64` / `OpenCvSharp4.runtime.win` / `Sdcb.OpenCvSharp4.mini.runtime.osx-arm64`)の計 5 件に限る(§2 の表)。これ以外の依存追加は本仕様の変更を伴う。
+- ライブラリ(`src/Recognizer`)の依存パッケージは ONNX Runtime(`Microsoft.ML.OnnxRuntime`)と画像処理バックエンド(`OpenCvSharp4`)、およびその RID 別ネイティブランタイムパッケージ 3 件(`OpenCvSharp4.official.runtime.linux-x64` / `OpenCvSharp4.runtime.win` / `Sdcb.OpenCvSharp4.mini.runtime.osx-arm64`)の計 5 件に限る(§2 の表)。これ以外の依存追加は本仕様の変更を伴う。
+  - この制約はライブラリに掛かるものであり、CLI(`src/Recognizer.Cli`)には掛からない。CLI は `System.CommandLine` を追加で参照する(§2「CLI の依存」)。テストの依存検査(`tests/Recognizer.Tests/PublicApiTests.cs`)も `src/Recognizer/Recognizer.csproj` のみを対象としている。
