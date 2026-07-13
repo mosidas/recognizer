@@ -36,7 +36,7 @@
     - 設計参照: design.md §7 データモデル(**プロパティ名は `Bbox`。`BBox` は `"bBox"` になる**。ソース生成は `JsonSerializerOptions` 経由で結線する)
     - 検証コマンド: `dotnet test --filter FullyQualifiedName~JsonOutputTests`(キーが `bbox` であること・1 行であること・`status` が列挙子名であること・カルチャ非依存であることを RED→GREEN で固定する)
 
-- [ ] 3. エラー処理基盤と CLI 制御フロー(最もリスクが高い。コマンドより先に固める)
+- [x] 3. エラー処理基盤と CLI 制御フロー(最もリスクが高い。コマンドより先に固める)
   - [x] 3.1 終了コード・code 定数・内部例外・実行時エラーのマッピングを実装する
         _Requirements: 7.1, 7.3, 7.7_
         _Boundary: Errors_
@@ -58,7 +58,7 @@
     - 対象ファイル: `src/Recognizer.Cli/Errors/UsageErrorClassifier.cs`(新規)、`tests/Recognizer.Cli.Tests/ErrorHandlingTests.cs`(変更)
     - 設計参照: design.md §8.2(判定順序 1〜8。英語メッセージの文字列一致に依存しない)
     - 検証コマンド: `dotnet test --filter FullyQualifiedName~ErrorHandlingTests`(§8.2 の 8 行それぞれを 1 ケース以上で覆う)
-  - [ ] 3.4 CliApplication と Program(制御フロー・エラー JSON の書き出し)を実装する
+  - [x] 3.4 CliApplication と Program(制御フロー・エラー JSON の書き出し)を実装する
         _Requirements: 2.7, 6.1, 7.2, 7.3_
         _Boundary: CliApplication_
         _Depends: 3.3_
@@ -159,4 +159,6 @@
 - **JSON の結線**(タスク 2.1): `CliJson.Options` に `Encoder = JavaScriptEncoder.Create(UnicodeRanges.All)` を追加した(design §7 に反映済み)。既定エンコーダだと日本語のエラーメッセージが `\uXXXX` にエスケープされ、要件 7.1 の「人間可読なメッセージ」が端末で読めなくなるため。`<` `>` `&` と U+2028/U+2029 はエスケープされ続けるので安全性は後退しない(レビュアーが実測)。
 - 後続コマンドが使う API: `CliJson.Write(TextWriter, T)` が 1 行 JSON + 末尾改行 1 個を書く。DTO 生成は `DetectFaceOutput.From(image, faces)` / `DetectObjectOutput.From(image, objects)` / `CompareFaceOutput.From(image1, image2, result)` を使い、**コマンド側に変換ロジックを書かない**(design §7「ロジックの所在」)。ライブラリ側は `BBox`、CLI DTO 側は `Bbox`。変換は `From(...)` 内に閉じている。
 - **`code` 文字列は camelCase**(`imageLoadFailed` / `modelNotFound` 等。design §8.1・§8.2 が正本)。SCREAMING_SNAKE にしない。
-- **既知の制約(タスク 3.4 / 7.1 で対応を検討)**: 出力に生の非 ASCII が乗るため、Windows コンソール(コードページが UTF-8 でない場合)で日本語メッセージが文字化けし得る。`Program.cs` で `Console.OutputEncoding = Encoding.UTF8` を設定するのが対策。テストはインプロセスの `StringWriter` を使うためこの経路を捕捉しない。
+- **タスク 4.1 への申し送り(必須)**: コマンドが 0 個の `RootCommand` では、引数なしの `Parse` が `Errors=0` になり使用法エラー経路に入らない(実測)。サブコマンドを 1 個でも登録すれば `Errors=1`(`missingCommand`)になる。**4.1 で「引数なし → 終了コード 2 / `missingCommand`」の外形テストを追加すること**(3.4 の時点では書けない。分類自体は `UsageErrorClassifier` の順 7 テストが固定済み)。
+- **タスク 4.2 への申し送り(必須)**: 3.4 の falsification で、`EnableDefaultExceptionHandler = false` を削除する変異が**テストで殺せなかった**(コマンド未登録で `InvokeAsync` が例外を投げる経路を外形から作れないため)。4.2 は実コマンド経路で実行時エラーを起こすので、この変異が殺せる状態になる。**4.2 のレビューで「既定例外ハンドラを有効に戻すとテストが落ちるか」を必ず確認すること**。
+- **既知の制約(タスク 7.1 で対応済みか確認)**: 出力に生の非 ASCII が乗るため、Windows コンソール(コードページが UTF-8 でない場合)で日本語メッセージが文字化けし得る。`Program.cs` で `Console.OutputEncoding = Encoding.UTF8` を設定した(タスク 3.4 で対応済み。リダイレクト時の例外は握り潰して続行する)。テストはインプロセスの `StringWriter` を使うためこの経路を捕捉しない。

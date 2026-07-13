@@ -21,6 +21,22 @@ public sealed class CliTestHost : IDisposable
     public static string FixturePath(string fileName)
         => Path.Combine(AppContext.BaseDirectory, "Fixtures", fileName);
 
+    /// <summary>
+    /// CLI をインプロセスで実行し、終了コードと stdout / stderr を返す(design §9.1)。
+    /// </summary>
+    // Why not: プロセスを起動しない。実行ファイル名・シェル・パス区切り・publish 状態への依存を持ち込むと
+    // 3 プラットフォームでの安定性(要件 8.5)を損なう。InvocationConfiguration の Output / Error は
+    // TextWriter で差し替えられるため、StringWriter 2 本で出力を捕捉できる(research §7.1)。
+    public static async Task<(int ExitCode, string Stdout, string Stderr)> RunCliAsync(params string[] args)
+    {
+        using StringWriter output = new();
+        using StringWriter error = new();
+
+        int exitCode = await CliApplication.RunAsync(args, output, error, CancellationToken.None);
+
+        return (exitCode, output.ToString(), error.ToString());
+    }
+
     /// <summary>白画像(640x640)の一時 PNG を生成し、そのパスを返す。</summary>
     // face_inputconf_f5.onnx は入力の平均画素値を confidence にするため、白画像は「顔あり」を作る(research §4)。
     public string CreateWhiteImage() => CreateImage(Scalar.All(255));

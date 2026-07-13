@@ -1,5 +1,6 @@
 using System.CommandLine;
 using System.Globalization;
+using System.Text.Json;
 using Recognizer.Cli.Commands;
 using Recognizer.Cli.Errors;
 using Recognizer.Cli.Output;
@@ -7,12 +8,13 @@ using Recognizer.Cli.Output;
 namespace Recognizer.Cli.Tests;
 
 /// <summary>
-/// 実行時エラーの例外 → code マッピング(design §8.1)と終了コード(design §8.3)の検証。
-/// 要件 7.1(error / code を持つ JSON)・7.3(3 種の終了コード)・7.7(例外種別と発生箇所から code が一意)。
+/// CLI 全体の制御フロー(design §4・§6・§8)の外形検証と、実行時エラーの例外 → code マッピング(design §8.1)・
+/// 終了コード(design §8.3)の検証。
+/// 要件 7.1(error / code を持つ JSON)・7.2(エラー時は stdout に出さない)・7.3(3 種の終了コード)・
+/// 7.7(例外種別と発生箇所から code が一意)。
 /// </summary>
 // Why not: 例外をモック/自作の代用型で作らない。マッピングの目的は「ライブラリが実際に投げる型」を
 // 正しい code に振り分けることであり、代用型では型の想定がずれても気づけない(research §3)。
-// CliApplication は未実装(タスク 3.4)のため、ここでは Map 単体を実物の例外で検証する。
 public sealed class ErrorHandlingTests
 {
     private const string ValidFaceModel = "face_nchw_standard_f5.onnx";
@@ -26,6 +28,82 @@ public sealed class ErrorHandlingTests
         Assert.NotEqual(ExitCodes.Success, ExitCodes.RuntimeError);
         Assert.NotEqual(ExitCodes.Success, ExitCodes.UsageError);
         Assert.NotEqual(ExitCodes.RuntimeError, ExitCodes.UsageError);
+    }
+
+    // 要件 2.7・6.1: --help は Errors 0 件で HelpAction が動き(research §7.2)、終了コード 0 で終わる。
+    // 使用法エラーの経路に入らないため、stderr は汚れない。
+    [Fact]
+    public async Task RunAsync_ヘルプは終了コード0でstderrに何も出力しない()
+    {
+        (int exitCode, string stdout, string stderr) = await CliTestHost.RunCliAsync("--help");
+
+        Assert.Equal(ExitCodes.Success, exitCode);
+        Assert.Empty(stderr);
+        Assert.NotEmpty(stdout);
+    }
+
+    // design §8.2 順 3: 未知のコマンド。要件 2.5・7.2・7.3。
+    [Fact]
+    public async Task RunAsync_未知のコマンドはunrecognizedArgumentで終了コード2()
+    {
+        (int exitCode, string stdout, string stderr) = await CliTestHost.RunCliAsync("nosuch");
+
+        Assert.Equal(ExitCodes.UsageError, exitCode);
+        Assert.Empty(stdout);
+
+        ErrorOutput error = ReadErrorJson(stderr);
+        Assert.Equal(ErrorCodes.UnrecognizedArgument, error.Code);
+        Assert.Contains("nosuch", error.Error, StringComparison.Ordinal);
+    }
+
+    // 要件 7.1・7.2: エラー JSON は error / code を持つ 1 行の JSON で stderr にのみ出る。
+    // Why not: フレームワーク既定のパースエラー出力(英語メッセージ + ヘルプ)に委ねない。InvokeAsync を呼ばず
+    // CLI 自身が JSON を書くことで、stdout を汚さず JSON 契約を保つ(design §8.2・research §7.2)。
+    // 未知のコマンド・未知のオプション(いずれも design §8.2 順 3)。出力契約は使用法エラー共通。
+    //
+    // コマンド未指定(順 7)を RunAsync の外形で覆えるのは、RootCommand にコマンドが 1 つ以上登録されてから
+    // (タスク 4.1 以降)。実測: コマンドが 0 個の RootCommand に引数なしで Parse すると Errors は 0 件・
+    // Action は null になり(サブコマンドが 1 つでもあれば "Required command was not provided." の
+    // ParseError が 1 件立つ)、使用法エラーの経路に入らない。ここに Errors 0 件用の分岐を足すと、
+    // コマンド登録後は到達不能な死にコードになるため足さない(design §4 は Errors > 0 のみを経路の条件とする)。
+    // 分類そのものは Classify_使用法エラーはdesignの分類表どおりのcodeになる(順 7)が覆っている。
+    public static TheoryData<string[]> UsageErrorArgs =>
+    [
+        ["nosuch"],
+        ["--nosuch-option"],
+    ];
+
+    [Theory]
+    [MemberData(nameof(UsageErrorArgs))]
+    public async Task RunAsync_使用法エラーはstdoutを汚さず1行のJSONをstderrに書く(string[] args)
+    {
+        (int exitCode, string stdout, string stderr) = await CliTestHost.RunCliAsync(args);
+
+        Assert.Equal(ExitCodes.UsageError, exitCode);
+        Assert.Empty(stdout);
+
+        // 末尾の改行 1 個は許容し、それ以外に改行を含まない(要件 6.3 と同じ 1 行契約)。
+        string trimmed = stderr.TrimEnd('\r', '\n');
+        Assert.NotEqual(stderr, trimmed);
+        Assert.DoesNotContain('\n', trimmed);
+
+        ErrorOutput error = ReadErrorJson(stderr);
+        Assert.NotEmpty(error.Error);
+        Assert.NotEmpty(error.Code);
+    }
+
+    // design §6 CliApplication の事前条件: args / output / error は非 null。
+    [Fact]
+    public async Task RunAsync_引数がnullなら事前条件違反()
+    {
+        using StringWriter writer = new();
+
+        _ = await Assert.ThrowsAsync<ArgumentNullException>(
+            () => CliApplication.RunAsync(null!, writer, writer, CancellationToken.None));
+        _ = await Assert.ThrowsAsync<ArgumentNullException>(
+            () => CliApplication.RunAsync([], null!, writer, CancellationToken.None));
+        _ = await Assert.ThrowsAsync<ArgumentNullException>(
+            () => CliApplication.RunAsync([], writer, null!, CancellationToken.None));
     }
 
     // §8.1 順 1: CLI 自身が投げる例外は、保持する code をそのまま使う。
@@ -432,8 +510,9 @@ public sealed class ErrorHandlingTests
         Assert.DoesNotContain("Unrecognized", output.Error, StringComparison.Ordinal);
     }
 
-    // CliApplication は未実装(タスク 3.4)のため、コマンドをテスト内で直接組み立てて Parse する(research §7.2 と同形)。
-    // 分類の全 8 行を試すには、位置引数・必須オプション・任意オプション・複数サブコマンドが揃った木が要る。
+    // Why not: CliApplication の RootCommand を使わない。3 コマンドの登録はタスク 4.1 以降であり、
+    // 分類の全 8 行を試すには位置引数・必須オプション・任意オプション・複数サブコマンドが揃った木が要る
+    // (research §7.2 と同形の木をテスト内で組み立てる)。コマンド登録後は §8.2 の各行が実コマンドでも成立する。
     private static RootCommand BuildFullRoot(UsageErrorCollector collector)
     {
         Command detectFace = new("detect-face")
@@ -448,7 +527,7 @@ public sealed class ErrorHandlingTests
         return new RootCommand { detectFace, new Command("compare-face") };
     }
 
-    // CliApplication は未実装(タスク 3.4)のため、コマンドをテスト内で直接組み立てて Parse する(research §7.2 と同形)。
+    // ThresholdOption 単体の検証用。閾値オプションだけを持つ最小の木で足りる(同上の理由で実コマンドを使わない)。
     private static RootCommand BuildConfidenceRoot(UsageErrorCollector collector, out Option<float> confidence)
     {
         confidence = ThresholdOption.Create("--confidence", 0.7f, collector);
@@ -459,6 +538,19 @@ public sealed class ErrorHandlingTests
         RootCommand root = new();
         root.Add(detectFace);
         return root;
+    }
+
+    // stderr に書かれた 1 行 JSON を読む。
+    // Why not: 逆シリアライズ(CliJson 経由)に頼らない。キー名 error / code は機械可読な契約(要件 7.1)であり、
+    // シリアライズ設定を共有すると命名の退行(PascalCase 化など)をテストが素通しする。
+    private static ErrorOutput ReadErrorJson(string stderr)
+    {
+        using JsonDocument document = JsonDocument.Parse(stderr);
+        JsonElement root = document.RootElement;
+
+        return new ErrorOutput(
+            root.GetProperty("error").GetString()!,
+            root.GetProperty("code").GetString()!);
     }
 
     private static Exception CaptureException(Action action)
