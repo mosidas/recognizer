@@ -10,7 +10,7 @@ namespace Recognizer.Cli.Tests;
 // Why not インプロセス実行(CliTestHost.RunCliAsync)で代替しない: OpenCV のネイティブ層は画像の読み込みに
 // 失敗すると .NET の TextWriter を経由せず fd 2 へ直接警告行を書く。インプロセスのテストが捕捉するのは
 // StringWriter であって実 stderr ではないため、警告行の混入を原理的に観測できない。実際、
-// Program.SilenceOpenCvNativeLog() の呼び出しを消しても他の全テストはグリーンのままになる(最終検証で判明)。
+// fd 2 の隔離(Program.ConfigureNativeStderr)を外しても他の全テストはグリーンのままになる。
 // 実プロセスを起動して初めて「stderr が 1 行の JSON である」という要件 7.1 の契約を検証できる。
 public sealed class ProcessSmokeTests
 {
@@ -32,7 +32,10 @@ public sealed class ProcessSmokeTests
         AssertSingleLineJson(stderr, expectedCode: "imageLoadFailed");
     }
 
-    // 画像としてデコードできないファイルでも同様(OpenCV は同じ経路で警告を書きうる)。
+    // 画像としてデコードできないファイルでも同様。
+    // 注: devcontainer / linux-x64 では OpenCV はこのケースで警告を書かない(ファイル自体は開けるため)。
+    // 一方 CI の ubuntu-latest では汚染が観測された。環境差があるので、汚染の実在に依存する検証は
+    // 画像不在ケース(下のカナリア)が担い、このテストは契約「stderr は 1 行の JSON」だけを固定する。
     [Fact]
     public async Task 実プロセス_デコード不可のstderrは1行のJSONのみ()
     {
@@ -66,6 +69,41 @@ public sealed class ProcessSmokeTests
         Assert.True(document.RootElement.TryGetProperty("faces", out _));
     }
 
+    // 画像不在のテストが空虚でないことを保証するカナリア。隔離を素通しさせると、OpenCV ネイティブが fd 2 へ書く
+    // 警告行が実 stderr に現れ、stderr は「1 行の JSON」でなくなる。つまり画像不在のテストは、実在する汚染源の
+    // 上で隔離を検証している(実測: 隔離を無効化すると devcontainer で落ちるのは画像不在の 1 件。デコード不可と
+    // 正常系はここでは OpenCV が fd 2 に書かないため、汚染がなくても緑になる)。
+    // このテストが落ちるときは、汚染源が消えたか passthrough が壊れたかのどちらかであり、いずれの場合も
+    // 画像不在のテストは「隔離が壊れても気づけない」状態に陥っている。
+    [Fact]
+    public async Task 実プロセス_passthrough指定時はネイティブの警告行が実stderrに現れる()
+    {
+        // Why linux 限定: macOS / Windows の OpenCV が同じ警告を fd 2 へ書くかは環境依存であり、そこに依存させると
+        // 本質と無関係な失敗を生む。xunit 2.x には動的スキップ(Assert.Skip)が無いため early return でガードする。
+        if (!OperatingSystem.IsLinux())
+        {
+            return;
+        }
+
+        using CliTestHost host = new();
+
+        (int exitCode, string stdout, string stderr) = await RunProcessAsync(
+            new Dictionary<string, string> { [Program.NativeStderrPassthroughVariable] = "1" },
+            ["detect-face", host.NonExistentPath(".png"), "--model", CliTestHost.FixturePath(ValidFaceModel)]);
+
+        Assert.Equal(ExitCodes.RuntimeError, exitCode);
+        Assert.Empty(stdout);
+
+        // Why not 警告の文言("[ WARN:...] findDecoder ...")に依存しない: 検証したいのは「ネイティブが実 stderr を
+        // 汚しうる」という事実であって OpenCV のログ書式ではない。stderr が 2 行以上になることがその事実を示す。
+        string[] lines = stderr.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        Assert.True(lines.Length > 1, $"ネイティブの警告行が観測されませんでした。stderr: {stderr}");
+
+        // 汚染があっても CLI 自身のエラー JSON は最後の行として出続ける(passthrough は隔離をやめるだけ)。
+        using JsonDocument document = JsonDocument.Parse(lines[^1].TrimEnd('\r'));
+        Assert.Equal("imageLoadFailed", document.RootElement.GetProperty("code").GetString());
+    }
+
     private static void AssertSingleLineJson(string stderr, string expectedCode)
     {
         string body = stderr.TrimEnd('\r', '\n');
@@ -81,7 +119,12 @@ public sealed class ProcessSmokeTests
     // ProjectReference により、CLI のアセンブリはテストの出力ディレクトリにも配置される。
     // Why not publish 成果物を使わない: publish は数十秒かかり、単体テストの実行時間を大きく損なう。
     // 検証したいのは「ネイティブの警告が実 stderr に混ざらないこと」であり、publish の有無に依存しない。
-    private static async Task<(int ExitCode, string Stdout, string Stderr)> RunProcessAsync(params string[] args)
+    private static Task<(int ExitCode, string Stdout, string Stderr)> RunProcessAsync(params string[] args)
+        => RunProcessAsync(environment: null, args);
+
+    private static async Task<(int ExitCode, string Stdout, string Stderr)> RunProcessAsync(
+        IReadOnlyDictionary<string, string>? environment,
+        string[] args)
     {
         string cliAssembly = Path.Combine(AppContext.BaseDirectory, "Recognizer.Cli.dll");
         Assert.True(File.Exists(cliAssembly), $"CLI のアセンブリが見つかりません: {cliAssembly}");
@@ -95,6 +138,17 @@ public sealed class ProcessSmokeTests
             StandardErrorEncoding = Encoding.UTF8,
             UseShellExecute = false,
         };
+
+        // Why 明示的に除去する: 子プロセスは親(テストランナー)の環境を継承するため、開発者や CI の環境に
+        // RECOGNIZER_NATIVE_STDERR=1 が export されていると、隔離が素通しになって契約テストが理由不明に落ちる。
+        // 環境非依存にすることがこの修正の趣旨なので、テスト自身も環境に依存させない。カナリアは下で明示的に
+        // 与え直すため影響を受けない。
+        _ = startInfo.Environment.Remove(Program.NativeStderrPassthroughVariable);
+
+        foreach ((string name, string value) in environment ?? new Dictionary<string, string>())
+        {
+            startInfo.Environment[name] = value;
+        }
 
         startInfo.ArgumentList.Add(cliAssembly);
         foreach (string arg in args)

@@ -158,6 +158,16 @@ $ echo $?
 | `missingCommand` | 2 | コマンドが指定されていない |
 | `invalidUsage` | 2 | 上記以外の使用法エラー |
 
+### ネイティブ層のログ(診断)
+
+stderr に出るのは CLI 自身が書く 1 行の JSON だけであり、OpenCV や ONNX Runtime のネイティブ層が出力する警告は届かない(Unix ではプロセスの stderr を OS レベルで隔離している)。ネイティブ層の警告を診断のために見たいときは、環境変数 `RECOGNIZER_NATIVE_STDERR=1` を指定する。このとき stderr は JSON 以外の行を含みうるため、スクリプトからのパースには使えない。
+
+```console
+$ RECOGNIZER_NATIVE_STDERR=1 recognizer detect-face missing.jpg --model models/yolov8n-face.onnx
+[ WARN:0@0.017] global loadsave.cpp:278 findDecoder imread_('missing.jpg'): can't open/read file: check file path/integrity
+{"error":"画像を読み込めませんでした: missing.jpg","code":"imageLoadFailed"}
+```
+
 ### スクリプトからの利用
 
 stdout は JSON のみのため、`jq` でそのままパースできる。検出 0 件は終了コード 0 で空配列が返るため、件数は終了コードではなく JSON で判定する。
