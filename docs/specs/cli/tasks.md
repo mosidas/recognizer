@@ -12,7 +12,7 @@
     - 対象ファイル: `src/Recognizer.Cli/Recognizer.Cli.csproj`(新規)、`tests/Recognizer.Cli.Tests/Recognizer.Cli.Tests.csproj`(新規)、`Recognizer.sln`(変更)
     - 設計参照: design.md §3 File Structure Plan、§10.1(publish 設定は 7.1 で仕上げる。ここでは net10.0 / Exe / nullable / ProjectReference / `System.CommandLine` 2.0.9 / `InternalsVisibleTo` まで)
     - 検証コマンド: `dotnet build`
-  - [ ] 1.2 既存 Fixtures のリンク参照とテストヘルパーを用意する
+  - [x] 1.2 既存 Fixtures のリンク参照とテストヘルパーを用意する
         _Requirements: 8.4, 8.5_
         _Boundary: Recognizer.Cli.Tests_
         _Depends: 1.1_

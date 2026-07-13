@@ -22,4 +22,10 @@
     <ProjectReference Include="..\..\src\Recognizer.Cli\Recognizer.Cli.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Why not: fixture ONNX を本プロジェクト配下に複製しない。既存 tests/Recognizer.Tests/Fixtures を
+         リンク参照して出力ディレクトリへコピーし、1 箇所で管理する(要件 8.4 / design §9.2) -->
+    <None Include="..\Recognizer.Tests\Fixtures\*.onnx" LinkBase="Fixtures" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>
