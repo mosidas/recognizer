@@ -284,8 +284,11 @@ internal sealed record ErrorOutput(string Error, string Code);
       PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
       Converters = { new JsonStringEnumConverter() },   // 命名ポリシーを渡さない = 列挙子名そのまま(要件 5.3・6.2)
       WriteIndented = false,                            // 要件 6.3
+      Encoder = JavaScriptEncoder.Create(UnicodeRanges.All),  // 実装フェーズで追加(下記)
   }
   ```
+
+  `Encoder` は実装フェーズで追加した。既定のエンコーダは非 ASCII をすべて `\uXXXX` にエスケープするため、日本語のエラーメッセージ(`error`。要件 7.1 は「人間可読なメッセージ」を求める)が端末で読めなくなる。`UnsafeRelaxedJsonEscaping` は `<script>` を素通しするため採らない。`UnicodeRanges.All` でも `<` `>` `&` `'` と U+2028 / U+2029 はエスケープされ続けることを実測で確認しており(1 行出力の要件 6.3 も守られる)、既定比で安全性は後退しない。
 
   実測: `{"image1":"a.jpg","status":"NoFaceInImage1","similarity":0,"face1":null}`。`CurrentCulture = de-DE` でも `0.7` は `0.7` のまま(要件 6.4)。
 - **ロジックの所在**: ライブラリ結果型 → DTO の変換は `OutputDtos.cs` の静的 `From(...)` に集約する(コマンド側に変換ロジックを散らさない)。

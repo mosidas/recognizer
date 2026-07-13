@@ -27,8 +27,8 @@
     - 設計参照: design.md §2 既存システムの分析(3)、§5 の 1.3 / 1.6 行
     - 検証コマンド: `dotnet test`(既存 224 件が成功すること。`git diff --stat src/Recognizer/` が空であること)
 
-- [ ] 2. JSON 出力基盤(出力 DTO とシリアライズ)
-  - [ ] 2.1 出力 DTO とソース生成コンテキスト、シリアライズ設定を実装する
+- [x] 2. JSON 出力基盤(出力 DTO とシリアライズ)
+  - [x] 2.1 出力 DTO とソース生成コンテキスト、シリアライズ設定を実装する
         _Requirements: 6.2, 6.3, 6.4_
         _Boundary: Output_
         _Depends: 1.2_
@@ -156,3 +156,7 @@
 - **タスク 3.4 で `CliTestHost` に `RunCliAsync` を追加すること**(`CliApplication.RunAsync` を `StringWriter` 2 本で呼び `(exitCode, stdout, stderr)` を返す薄いラッパー。design §9.1)。あわせて 1.1 が置いた暫定 `ProjectSetupTests.cs` を削除/吸収する。
 - `face_inputconf_f5.onnx` + 白画像 → 検出あり / 黒画像 → 未検出 を実測で確認済み(research §4 のとおり)。
 - 要件 8.5 のため、パス組み立ては必ず `Path.Combine` を使い区切り文字をハードコードしない。
+- **JSON の結線**(タスク 2.1): `CliJson.Options` に `Encoder = JavaScriptEncoder.Create(UnicodeRanges.All)` を追加した(design §7 に反映済み)。既定エンコーダだと日本語のエラーメッセージが `\uXXXX` にエスケープされ、要件 7.1 の「人間可読なメッセージ」が端末で読めなくなるため。`<` `>` `&` と U+2028/U+2029 はエスケープされ続けるので安全性は後退しない(レビュアーが実測)。
+- 後続コマンドが使う API: `CliJson.Write(TextWriter, T)` が 1 行 JSON + 末尾改行 1 個を書く。DTO 生成は `DetectFaceOutput.From(image, faces)` / `DetectObjectOutput.From(image, objects)` / `CompareFaceOutput.From(image1, image2, result)` を使い、**コマンド側に変換ロジックを書かない**(design §7「ロジックの所在」)。ライブラリ側は `BBox`、CLI DTO 側は `Bbox`。変換は `From(...)` 内に閉じている。
+- **`code` 文字列は camelCase**(`imageLoadFailed` / `modelNotFound` 等。design §8.1・§8.2 が正本)。SCREAMING_SNAKE にしない。
+- **既知の制約(タスク 3.4 / 7.1 で対応を検討)**: 出力に生の非 ASCII が乗るため、Windows コンソール(コードページが UTF-8 でない場合)で日本語メッセージが文字化けし得る。`Program.cs` で `Console.OutputEncoding = Encoding.UTF8` を設定するのが対策。テストはインプロセスの `StringWriter` を使うためこの経路を捕捉しない。
