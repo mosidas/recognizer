@@ -67,7 +67,7 @@
     - 検証コマンド: `dotnet test --filter FullyQualifiedName~Recognizer.Cli.Tests`(`--help` が終了コード 0・stderr 空であること、エラー時に stdout が空であることを含む。**この時点ではコマンドが 1 つも登録されていないため help の一覧は空でよい**。3 コマンドが列挙されることの検証は 6.2 で行う)
 
 - [ ] 4. detect-face コマンド(最初の end-to-end スライス)
-  - [ ] 4.1 detect-face の正常系(JSON 出力・ランドマーク有無・検出 0 件)を実装する
+  - [x] 4.1 detect-face の正常系(JSON 出力・ランドマーク有無・検出 0 件)を実装する
         _Requirements: 2.1, 2.2, 2.3, 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 6.5, 7.9, 8.1, 8.3_
         _Boundary: Commands_
         _Depends: 3.4_
@@ -159,6 +159,6 @@
 - **JSON の結線**(タスク 2.1): `CliJson.Options` に `Encoder = JavaScriptEncoder.Create(UnicodeRanges.All)` を追加した(design §7 に反映済み)。既定エンコーダだと日本語のエラーメッセージが `\uXXXX` にエスケープされ、要件 7.1 の「人間可読なメッセージ」が端末で読めなくなるため。`<` `>` `&` と U+2028/U+2029 はエスケープされ続けるので安全性は後退しない(レビュアーが実測)。
 - 後続コマンドが使う API: `CliJson.Write(TextWriter, T)` が 1 行 JSON + 末尾改行 1 個を書く。DTO 生成は `DetectFaceOutput.From(image, faces)` / `DetectObjectOutput.From(image, objects)` / `CompareFaceOutput.From(image1, image2, result)` を使い、**コマンド側に変換ロジックを書かない**(design §7「ロジックの所在」)。ライブラリ側は `BBox`、CLI DTO 側は `Bbox`。変換は `From(...)` 内に閉じている。
 - **`code` 文字列は camelCase**(`imageLoadFailed` / `modelNotFound` 等。design §8.1・§8.2 が正本)。SCREAMING_SNAKE にしない。
-- **タスク 4.1 への申し送り(必須)**: コマンドが 0 個の `RootCommand` では、引数なしの `Parse` が `Errors=0` になり使用法エラー経路に入らない(実測)。サブコマンドを 1 個でも登録すれば `Errors=1`(`missingCommand`)になる。**4.1 で「引数なし → 終了コード 2 / `missingCommand`」の外形テストを追加すること**(3.4 の時点では書けない。分類自体は `UsageErrorClassifier` の順 7 テストが固定済み)。
+- ~~タスク 4.1 への申し送り(対応済み)~~: コマンドが 0 個の `RootCommand` では、引数なしの `Parse` が `Errors=0` になり使用法エラー経路に入らない(実測)。サブコマンドを 1 個でも登録すれば `Errors=1`(`missingCommand`)になる。**4.1 で「引数なし → 終了コード 2 / `missingCommand`」の外形テストを追加すること**(3.4 の時点では書けない。分類自体は `UsageErrorClassifier` の順 7 テストが固定済み)。
 - **タスク 4.2 への申し送り(必須)**: 3.4 の falsification で、`EnableDefaultExceptionHandler = false` を削除する変異が**テストで殺せなかった**(コマンド未登録で `InvokeAsync` が例外を投げる経路を外形から作れないため)。4.2 は実コマンド経路で実行時エラーを起こすので、この変異が殺せる状態になる。**4.2 のレビューで「既定例外ハンドラを有効に戻すとテストが落ちるか」を必ず確認すること**。
 - **既知の制約(タスク 7.1 で対応済みか確認)**: 出力に生の非 ASCII が乗るため、Windows コンソール(コードページが UTF-8 でない場合)で日本語メッセージが文字化けし得る。`Program.cs` で `Console.OutputEncoding = Encoding.UTF8` を設定した(タスク 3.4 で対応済み。リダイレクト時の例外は握り潰して続行する)。テストはインプロセスの `StringWriter` を使うためこの経路を捕捉しない。

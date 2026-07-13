@@ -56,21 +56,32 @@ public sealed class ErrorHandlingTests
         Assert.Contains("nosuch", error.Error, StringComparison.Ordinal);
     }
 
+    // design §8.2 順 7 / 要件 2.5: コマンド未指定(引数なし)。
+    // Why not: この検証をタスク 3.4 の時点では書けなかった。コマンドが 0 個の RootCommand に引数なしで Parse
+    // すると Errors は 0 件・Action は null になり、使用法エラーの経路に入らない(実測)。detect-face が
+    // 登録された今、"Required command was not provided." の ParseError が 1 件立ち、外形で観測できる。
+    [Fact]
+    public async Task RunAsync_コマンド未指定はmissingCommandで終了コード2()
+    {
+        (int exitCode, string stdout, string stderr) = await CliTestHost.RunCliAsync();
+
+        Assert.Equal(ExitCodes.UsageError, exitCode);
+        Assert.Empty(stdout);
+
+        ErrorOutput error = ReadErrorJson(stderr);
+        Assert.Equal(ErrorCodes.MissingCommand, error.Code);
+        Assert.Contains("detect-face", error.Error, StringComparison.Ordinal);
+    }
+
     // 要件 7.1・7.2: エラー JSON は error / code を持つ 1 行の JSON で stderr にのみ出る。
     // Why not: フレームワーク既定のパースエラー出力(英語メッセージ + ヘルプ)に委ねない。InvokeAsync を呼ばず
     // CLI 自身が JSON を書くことで、stdout を汚さず JSON 契約を保つ(design §8.2・research §7.2)。
-    // 未知のコマンド・未知のオプション(いずれも design §8.2 順 3)。出力契約は使用法エラー共通。
-    //
-    // コマンド未指定(順 7)を RunAsync の外形で覆えるのは、RootCommand にコマンドが 1 つ以上登録されてから
-    // (タスク 4.1 以降)。実測: コマンドが 0 個の RootCommand に引数なしで Parse すると Errors は 0 件・
-    // Action は null になり(サブコマンドが 1 つでもあれば "Required command was not provided." の
-    // ParseError が 1 件立つ)、使用法エラーの経路に入らない。ここに Errors 0 件用の分岐を足すと、
-    // コマンド登録後は到達不能な死にコードになるため足さない(design §4 は Errors > 0 のみを経路の条件とする)。
-    // 分類そのものは Classify_使用法エラーはdesignの分類表どおりのcodeになる(順 7)が覆っている。
+    // 未知のコマンド・未知のオプション(順 3)・コマンド未指定(順 7)。出力契約は使用法エラー共通。
     public static TheoryData<string[]> UsageErrorArgs =>
     [
         ["nosuch"],
         ["--nosuch-option"],
+        [],
     ];
 
     [Theory]
