@@ -239,6 +239,106 @@ public sealed class ErrorHandlingTests
         Assert.Contains("想定外", output.Error, StringComparison.Ordinal);
     }
 
+    // ここから: 実行時エラーを「実コマンド経路」で検証する(design §9.3 の「実行時エラー」行・要件 8.2)。
+    // Why not: Map の単体テスト(上記)で代替しない。単体テストは例外を Map に直接渡すため、CliApplication が
+    // 例外を捕捉して JSON を書き終了コード 1 を返すという配線(design §8.1)を一切通らない。既定の例外ハンドラを
+    // 無効化し損ねる・catch を外す・stdout に書いてしまう、といった退行は外形からしか観測できない。
+
+    // 要件 7.4: 画像ファイルが存在しない → imageLoadFailed。モデルは正常にロードされ、デコード段で失敗する。
+    [Fact]
+    public async Task DetectFace_画像ファイル不在はimageLoadFailedで終了コード1()
+    {
+        using CliTestHost host = new();
+
+        (int exitCode, string stdout, string stderr) = await CliTestHost.RunCliAsync(
+            "detect-face", host.NonExistentPath(".png"), "--model", CliTestHost.FixturePath(ValidFaceModel));
+
+        AssertRuntimeError(ErrorCodes.ImageLoadFailed, exitCode, stdout, stderr);
+    }
+
+    // 要件 7.4: 画像としてデコードできない(中身がテキストのファイル)→ imageLoadFailed。
+    [Fact]
+    public async Task DetectFace_デコードできない画像はimageLoadFailedで終了コード1()
+    {
+        using CliTestHost host = new();
+
+        (int exitCode, string stdout, string stderr) = await CliTestHost.RunCliAsync(
+            "detect-face", host.CreateNonImageFile(".png"), "--model", CliTestHost.FixturePath(ValidFaceModel));
+
+        AssertRuntimeError(ErrorCodes.ImageLoadFailed, exitCode, stdout, stderr);
+    }
+
+    // 要件 7.1: error は「人間可読なメッセージ」。ライブラリの ArgumentException はメッセージ自体が
+    // 「画像を読み込めませんでした: <path>」で始まり、.NET が " (Parameter 'imagePath')" を付ける。
+    // 素朴に接頭辞を足すと二重になり、英語の接尾辞も残る。本文そのものを固定して退行を止める。
+    [Fact]
+    public async Task DetectFace_画像エラーのメッセージは接頭辞が重複せず英語の接尾辞も残らない()
+    {
+        using CliTestHost host = new();
+        string missingImage = host.NonExistentPath(".png");
+
+        (_, _, string stderr) = await CliTestHost.RunCliAsync(
+            "detect-face", missingImage, "--model", CliTestHost.FixturePath(ValidFaceModel));
+
+        ErrorOutput error = ReadErrorJson(stderr);
+
+        Assert.Equal($"画像を読み込めませんでした: {missingImage}", error.Error);
+    }
+
+    // 画像パス自体が " (Parameter" を含んでも、メッセージ本体を切り落とさない(接尾辞は末尾のみ剥がす)。
+    [Fact]
+    public async Task DetectFace_パスに接尾辞と紛らわしい文字列を含んでもパスを保つ()
+    {
+        using CliTestHost host = new();
+        string missingImage = host.NonExistentPath(".png");
+        string confusing = Path.Combine(
+            Path.GetDirectoryName(missingImage)!,
+            $"a (Parameter x){Path.GetFileName(missingImage)}");
+
+        (_, _, string stderr) = await CliTestHost.RunCliAsync(
+            "detect-face", confusing, "--model", CliTestHost.FixturePath(ValidFaceModel));
+
+        ErrorOutput error = ReadErrorJson(stderr);
+
+        Assert.Equal($"画像を読み込めませんでした: {confusing}", error.Error);
+    }
+
+    // 要件 7.5: モデルファイルが存在しない → modelNotFound。画像は正常なものを渡し、モデル起因であることを担保する。
+    [Fact]
+    public async Task DetectFace_モデルファイル不在はmodelNotFoundで終了コード1()
+    {
+        using CliTestHost host = new();
+
+        (int exitCode, string stdout, string stderr) = await CliTestHost.RunCliAsync(
+            "detect-face", host.CreateWhiteImage(), "--model", host.NonExistentPath(".onnx"));
+
+        AssertRuntimeError(ErrorCodes.ModelNotFound, exitCode, stdout, stderr);
+    }
+
+    // 要件 7.5: ONNX として壊れているファイル(ロード失敗)→ modelLoadFailed。
+    [Fact]
+    public async Task DetectFace_壊れたモデルはmodelLoadFailedで終了コード1()
+    {
+        using CliTestHost host = new();
+
+        (int exitCode, string stdout, string stderr) = await CliTestHost.RunCliAsync(
+            "detect-face", host.CreateWhiteImage(), "--model", host.CreateNonImageFile(".onnx"));
+
+        AssertRuntimeError(ErrorCodes.ModelLoadFailed, exitCode, stdout, stderr);
+    }
+
+    // 要件 7.5: ONNX としては読めるが形式が非対応(出力が 7 要素)→ unsupportedModelFormat。
+    [Fact]
+    public async Task DetectFace_非対応モデル形式はunsupportedModelFormatで終了コード1()
+    {
+        using CliTestHost host = new();
+
+        (int exitCode, string stdout, string stderr) = await CliTestHost.RunCliAsync(
+            "detect-face", host.CreateWhiteImage(), "--model", CliTestHost.FixturePath(UnsupportedFaceModel));
+
+        AssertRuntimeError(ErrorCodes.UnsupportedModelFormat, exitCode, stdout, stderr);
+    }
+
     // code は機械可読な契約(要件 7.7・7.8)であり、値そのものを固定する。
     // 定数同士の突き合わせでは、定数の値を書き換えても検出できない。
     [Fact]
@@ -549,6 +649,29 @@ public sealed class ErrorHandlingTests
         RootCommand root = new();
         root.Add(detectFace);
         return root;
+    }
+
+    // 実行時エラーの出力契約(要件 7.1・7.2・7.3 / design §8.1・§8.3)を 1 か所に固定する。
+    private static void AssertRuntimeError(string expectedCode, int exitCode, string stdout, string stderr)
+    {
+        // 要件 7.3: 実行時エラーは 1(使用法エラーの 2 と取り違えていないことも含めて固定する)。
+        Assert.Equal(ExitCodes.RuntimeError, exitCode);
+
+        // 要件 7.2: エラー時は stdout に何も出さない(部分的に書きかけた JSON も残さない)。
+        Assert.Empty(stdout);
+
+        // 要件 6.3 と同じ 1 行契約。末尾の改行 1 個のみを許容する。
+        // Why: ライブラリ由来のメッセージ(OnnxRuntimeException 等)は改行を含みうるが、JSON エスケープされる
+        // ため物理的な行は 1 行のままになる。既定の例外ハンドラを無効化し損ねると、ここに英語のスタックトレースが
+        // 複数行で出るため、この 1 行検査と下の JSON パースの両方が落ちる(design §8.1)。
+        string trimmed = stderr.TrimEnd('\r', '\n');
+        Assert.NotEqual(stderr, trimmed);
+        Assert.DoesNotContain('\n', trimmed);
+
+        // 要件 7.1・7.7: error は空でない日本語メッセージ、code は例外種別と発生箇所から一意に決まる値。
+        ErrorOutput error = ReadErrorJson(stderr);
+        Assert.Equal(expectedCode, error.Code);
+        Assert.NotEmpty(error.Error);
     }
 
     // stderr に書かれた 1 行 JSON を読む。

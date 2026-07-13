@@ -58,8 +58,8 @@
 
 | ファイルパス | 区分 | 責務 |
 | --- | --- | --- |
-| `src/Recognizer.Cli/Recognizer.Cli.csproj` | 新規 | net10.0 / Exe / nullable enable、`Recognizer` への ProjectReference、`System.CommandLine` 参照、3 RID の `RuntimeIdentifiers`、publish 設定、`InternalsVisibleTo(Recognizer.Cli.Tests)` |
-| `src/Recognizer.Cli/Program.cs` | 新規 | エントリポイント。`Console.Out` / `Console.Error` / Ctrl+C の CancellationToken を `CliApplication.RunAsync` に渡し、終了コードを返すだけ |
+| `src/Recognizer.Cli/Recognizer.Cli.csproj` | 新規 | net10.0 / Exe / nullable enable、`Recognizer` への ProjectReference、`System.CommandLine` 参照、`OpenCvSharp4` 参照(画像処理には使わない。ネイティブログ抑止のみ。§8.1)、3 RID の `RuntimeIdentifiers`、publish 設定、`InternalsVisibleTo(Recognizer.Cli.Tests)` |
+| `src/Recognizer.Cli/Program.cs` | 新規 | エントリポイント。`Console.Out` / `Console.Error` / Ctrl+C の CancellationToken を `CliApplication.RunAsync` に渡し、終了コードを返すだけ。加えてプロセス起動時に UTF-8 出力と OpenCV ネイティブログの抑止を行う(下記) |
 | `src/Recognizer.Cli/CliApplication.cs` | 新規 | 制御フロー: RootCommand 構築 → `Parse` → エラーがあれば使用法エラー JSON → なければ `InvokeAsync` → 実行時例外を捕捉して JSON → 終了コード |
 | `src/Recognizer.Cli/ExitCodes.cs` | 新規 | 終了コード定数(`Success = 0` / `RuntimeError = 1` / `UsageError = 2`) |
 | `src/Recognizer.Cli/Commands/DetectFaceCommand.cs` | 新規 | `detect-face` の定義と Action(`FaceDetector.DetectAsync` → `DetectFaceOutput`) |
@@ -317,6 +317,16 @@ internal sealed record ErrorOutput(string Error, string Code);
 - `ArgumentException` は閾値検証を CLI が事前に済ませているため、ここに到達するものは画像起因に限定される(前提 P1、research §3)。
 - `OperationCanceledException`(Ctrl+C)は `unexpectedError` に落ちる。要件に無いため専用の code は設けない(YAGNI)。
 
+**実装フェーズで追加: OpenCV ネイティブログの抑止(要件 7.1)**
+
+OpenCV のネイティブ層は画像の読み込みに失敗すると、.NET の `TextWriter` を経由せず **fd 2 へ直接**警告行を書く(実測: `[ WARN:0@0.028] global loadsave.cpp:278 findDecoder imread_('...'): can't open/read file`)。放置すると、最も頻度の高い実行時エラー(画像不在)で **stderr が「警告行 + エラー JSON」の 2 行**になり、stderr を JSON としてパースする利用者が壊れる(要件 7.1 の機械可読なエラー出力が成立しない)。
+
+そこで `Program` の起動時に `Cv2.SetLogLevel(LogLevel.SILENT)` を呼び、CLI の stderr を JSON だけに保つ。これに伴い `Recognizer.Cli` は `OpenCvSharp4` を**直接参照**する(画像処理には使わない。ログ抑止のみ)。
+
+- Why not 環境変数 `OPENCV_LOG_LEVEL=SILENT`: .NET の `Environment.SetEnvironmentVariable` は Unix のネイティブ `getenv` に伝播せず、プロセス内から設定しても効かない(実測)。
+- Why not 放置して「stderr の最終行を読め」と文書化する: 要件 7.1 の目的(スクリプトからのエラー種別分岐)を利用者側の回避策に転嫁することになる。
+- この警告は .NET の `TextWriter` を経由しないため、**インプロセスのテストでは観測できない**(要件 8.x の自動テストで捕捉不能)。回帰の検出は publish 成果物のスモーク検証(§9.4)で行う。
+
 ### 8.2 使用法エラー(終了コード 2)
 
 `rootCommand.Parse(args)` の結果 `Errors.Count > 0` のとき、`InvokeAsync` を呼ばずに `UsageErrorClassifier` が分類する。**フレームワークの英語メッセージを文字列一致で判定しない**(将来のバージョンで文言が変わると壊れるため)。`SymbolResult` の型と `UnmatchedTokens` の構造で判定する(実測に基づく。research §7.2)。
@@ -395,6 +405,14 @@ CLI をプロセス起動せず、`CliApplication.RunAsync(args, StringWriter, S
 ```bash
 dotnet publish src/Recognizer.Cli/Recognizer.Cli.csproj -c Release -r linux-x64 -o /tmp/cli-publish
 /tmp/cli-publish/recognizer <3 コマンド + エラー 2 系統>  # JSON と終了コードを確認
+```
+
+**stderr が 1 行の JSON であることを必ず検査する**(§8.1 の「OpenCV ネイティブログの抑止」の回帰は、ネイティブが fd 2 に直接書くためインプロセスのテストでは捕捉できない。ここが唯一の検出点):
+
+```bash
+/tmp/cli-publish/recognizer detect-face /tmp/no-such.png --model <model> 2>/tmp/err.txt
+test "$(wc -l < /tmp/err.txt)" -eq 1                      # 警告行が混ざっていないこと
+python3 -c "import json; json.load(open('/tmp/err.txt'))"  # そのまま JSON としてパースできること
 ```
 
 ## 10. その他

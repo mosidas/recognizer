@@ -1,4 +1,5 @@
 using System.Text;
+using OpenCvSharp;
 
 namespace Recognizer.Cli;
 
@@ -10,6 +11,7 @@ internal static class Program
 {
     private static async Task<int> Main(string[] args)
     {
+        SilenceOpenCvNativeLog();
         TryUseUtf8Output();
 
         using CancellationTokenSource cancellation = new();
@@ -31,6 +33,28 @@ internal static class Program
         finally
         {
             Console.CancelKeyPress -= OnCancelKeyPress;
+        }
+    }
+
+    // OpenCV のネイティブ層は画像の読み込みに失敗すると警告行を fd 2 へ直接書く。放置すると stderr が
+    // 「警告行 + エラー JSON」の 2 行になり、stderr を JSON としてパースする利用者が壊れる(要件 7.1 の
+    // 機械可読なエラー出力が成立しない)。CLI の stderr は JSON だけに保つ。
+    // Why not 環境変数 OPENCV_LOG_LEVEL=SILENT を設定しない: .NET の Environment.SetEnvironmentVariable は
+    // Unix のネイティブ getenv に伝播せず、プロセス内から設定しても効かない(実測)。
+    // Why not 失敗を致命にしない: この呼び出しは OpenCV のネイティブ資産をロードする。ロードできない環境で
+    // 例外を素通しすると、OpenCV を必要としない経路(--help・使用法エラー)まで英語のスタックトレースで
+    // 死に、要件 7.1・7.2 を破る。ログ抑止は品質改善であって CLI の本務ではない。
+    private static void SilenceOpenCvNativeLog()
+    {
+        try
+        {
+            Cv2.SetLogLevel(LogLevel.SILENT);
+        }
+        catch (DllNotFoundException)
+        {
+        }
+        catch (TypeInitializationException)
+        {
         }
     }
 

@@ -11,6 +11,8 @@
 
   <ItemGroup>
     <PackageReference Include="System.CommandLine" Version="2.0.9" />
+    <!-- 画像処理には使わない。OpenCV ネイティブの警告が stderr の JSON を汚すのを止めるためだけに参照する(Program.SilenceOpenCvNativeLog)。 -->
+    <PackageReference Include="OpenCvSharp4" Version="4.13.0.20260627" />
   </ItemGroup>
 
   <ItemGroup>

@@ -30,7 +30,7 @@ internal static class RuntimeErrorMapper
                 $"非対応のモデル形式です: {notSupported.Message}",
                 ErrorCodes.UnsupportedModelFormat),
             ArgumentException argument => new ErrorOutput(
-                $"画像を読み込めませんでした: {argument.Message}",
+                DescribeImageFailure(argument),
                 ErrorCodes.ImageLoadFailed),
             _ => new ErrorOutput(
                 $"予期しないエラーが発生しました: {exception.Message}",
@@ -42,4 +42,32 @@ internal static class RuntimeErrorMapper
     // 改行付きで連結するため、パスだけを取り出せる FileName を優先する(FileName が空の実装に備えて Message へ退避)。
     private static string DescribeMissingFile(FileNotFoundException exception)
         => string.IsNullOrEmpty(exception.FileName) ? exception.Message : exception.FileName;
+
+    private const string ImageFailurePrefix = "画像を読み込めませんでした";
+
+    // ライブラリの ArgumentException は ".NET が付ける ' (Parameter ...)' 接尾辞" を持ち、メッセージ自体が
+    // 既に「画像を読み込めませんでした: <path>」で始まることがある(ImageDecoder)。素朴に接頭辞を足すと
+    // 「画像を読み込めませんでした: 画像を読み込めませんでした: ...」と二重になるため、原因部分だけを取り出す。
+    private static string DescribeImageFailure(ArgumentException exception)
+    {
+        string reason = StripParameterSuffix(exception.Message).TrimEnd();
+
+        return reason.StartsWith(ImageFailurePrefix, StringComparison.Ordinal)
+            ? reason
+            : $"{ImageFailurePrefix}: {reason}";
+    }
+
+    // Why not IndexOf を使わない: 画像パス自体が " (Parameter" を含むと(利用者が付けたファイル名は任意)
+    // メッセージ本体を途中で切り落とし、どのファイルで失敗したか分からなくなる。接尾辞は必ず末尾にあり
+    // ")" で閉じるため、末尾からの一致に限定する。
+    private static string StripParameterSuffix(string message)
+    {
+        if (!message.EndsWith(')'))
+        {
+            return message;
+        }
+
+        int suffix = message.LastIndexOf(" (Parameter", StringComparison.Ordinal);
+        return suffix < 0 ? message : message[..suffix];
+    }
 }

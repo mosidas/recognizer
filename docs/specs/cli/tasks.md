@@ -66,7 +66,7 @@
     - 設計参照: design.md §6 CliApplication(契約)、§4 システムフロー、§8(`EnableDefaultExceptionHandler = false`。パースエラー時は `InvokeAsync` を呼ばない)
     - 検証コマンド: `dotnet test --filter FullyQualifiedName~Recognizer.Cli.Tests`(`--help` が終了コード 0・stderr 空であること、エラー時に stdout が空であることを含む。**この時点ではコマンドが 1 つも登録されていないため help の一覧は空でよい**。3 コマンドが列挙されることの検証は 6.2 で行う)
 
-- [ ] 4. detect-face コマンド(最初の end-to-end スライス)
+- [x] 4. detect-face コマンド(最初の end-to-end スライス)
   - [x] 4.1 detect-face の正常系(JSON 出力・ランドマーク有無・検出 0 件)を実装する
         _Requirements: 2.1, 2.2, 2.3, 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 6.5, 7.9, 8.1, 8.3_
         _Boundary: Commands_
@@ -74,7 +74,7 @@
     - 対象ファイル: `src/Recognizer.Cli/Commands/DetectFaceCommand.cs`(新規)、`src/Recognizer.Cli/CliApplication.cs`(変更: コマンド登録)、`src/Recognizer.Cli/Output/OutputDtos.cs`(変更: 変換の追加)、`tests/Recognizer.Cli.Tests/DetectFaceCommandTests.cs`(新規)
     - 設計参照: design.md §5 の 3.1〜3.7 行、§9.3(Fixture と期待値: `face_nchw_transposed_f5`(3 件・landmarks は null)/ `face_nchw_transposed_f20`(landmarks あり)/ `face_inputconf_f5` + 黒画像(0 件))
     - 検証コマンド: `dotnet test --filter FullyQualifiedName~DetectFaceCommandTests`(`--confidence` の既定値 0.7 が適用されることを含む)
-  - [ ] 4.2 実行時エラー(画像・モデル)の分岐を実コマンド経路で検証する
+  - [x] 4.2 実行時エラー(画像・モデル)の分岐を実コマンド経路で検証する
         _Requirements: 7.4, 7.5, 8.2_
         _Boundary: Errors_
         _Depends: 4.1_
@@ -121,7 +121,7 @@
         _Depends: 6.1_
     - 対象ファイル: `src/Recognizer.Cli/Recognizer.Cli.csproj`(変更)
     - 設計参照: design.md §10.1(publish 設定の表。トリミングはしない)、§9.4(スモーク検証の手順。結果を Implementation Notes に記録する)
-    - 検証コマンド: `dotnet publish src/Recognizer.Cli/Recognizer.Cli.csproj -c Release -r linux-x64 -o /tmp/cli-publish` の後、生成された実行ファイルで 3 コマンドとエラー 2 系統(実行時・使用法)を実行し、JSON と終了コード(0 / 1 / 2)を確認する
+    - 検証コマンド: `dotnet publish src/Recognizer.Cli/Recognizer.Cli.csproj -c Release -r linux-x64 -o /tmp/cli-publish` の後、生成された実行ファイルで 3 コマンドとエラー 2 系統(実行時・使用法)を実行し、JSON と終了コード(0 / 1 / 2)を確認する。**加えて、画像不在エラーの stderr が 1 行でありそのまま JSON としてパースできることを検査する**(OpenCV ネイティブログ抑止の回帰。インプロセステストでは捕捉できないため、ここが唯一の検出点。design §9.4)
   - [ ] 7.2 CI に CLI の publish ステップを追加する
         _Requirements: 9.2_
         _Boundary: CI_
@@ -159,6 +159,8 @@
 - **JSON の結線**(タスク 2.1): `CliJson.Options` に `Encoder = JavaScriptEncoder.Create(UnicodeRanges.All)` を追加した(design §7 に反映済み)。既定エンコーダだと日本語のエラーメッセージが `\uXXXX` にエスケープされ、要件 7.1 の「人間可読なメッセージ」が端末で読めなくなるため。`<` `>` `&` と U+2028/U+2029 はエスケープされ続けるので安全性は後退しない(レビュアーが実測)。
 - 後続コマンドが使う API: `CliJson.Write(TextWriter, T)` が 1 行 JSON + 末尾改行 1 個を書く。DTO 生成は `DetectFaceOutput.From(image, faces)` / `DetectObjectOutput.From(image, objects)` / `CompareFaceOutput.From(image1, image2, result)` を使い、**コマンド側に変換ロジックを書かない**(design §7「ロジックの所在」)。ライブラリ側は `BBox`、CLI DTO 側は `Bbox`。変換は `From(...)` 内に閉じている。
 - **`code` 文字列は camelCase**(`imageLoadFailed` / `modelNotFound` 等。design §8.1・§8.2 が正本)。SCREAMING_SNAKE にしない。
+- **OpenCV ネイティブログの抑止(タスク 4.2 で追加)**: OpenCV は画像読み込み失敗時に `TextWriter` を経由せず fd 2 へ直接警告行を書き、stderr が「警告 + JSON」の 2 行になっていた(stderr を JSON パースする利用者が壊れる)。`Program` で `Cv2.SetLogLevel(LogLevel.SILENT)` を呼んで抑止し、`OpenCvSharp4` を CLI に直接参照した(design §8.1 に反映)。**インプロセステストでは捕捉できない**ため、回帰検出はタスク 7.1 の publish スモークが唯一の手段。
+- **エラーメッセージの二重接頭辞(タスク 4.2 で修正)**: ライブラリの `ArgumentException` は「画像を読み込めませんでした: <path> (Parameter 'imagePath')」というメッセージを持つため、素朴に接頭辞を足すと二重になり英語の接尾辞も残っていた。`RuntimeErrorMapper.DescribeImageFailure` で解消し、**メッセージ本文を固定する回帰テスト**を追加した(教訓: `Assert.NotEmpty(error.Error)` だけでは本文の退行を検出できない)。
 - ~~タスク 4.1 への申し送り(対応済み)~~: コマンドが 0 個の `RootCommand` では、引数なしの `Parse` が `Errors=0` になり使用法エラー経路に入らない(実測)。サブコマンドを 1 個でも登録すれば `Errors=1`(`missingCommand`)になる。**4.1 で「引数なし → 終了コード 2 / `missingCommand`」の外形テストを追加すること**(3.4 の時点では書けない。分類自体は `UsageErrorClassifier` の順 7 テストが固定済み)。
 - **タスク 4.2 への申し送り(必須)**: 3.4 の falsification で、`EnableDefaultExceptionHandler = false` を削除する変異が**テストで殺せなかった**(コマンド未登録で `InvokeAsync` が例外を投げる経路を外形から作れないため)。4.2 は実コマンド経路で実行時エラーを起こすので、この変異が殺せる状態になる。**4.2 のレビューで「既定例外ハンドラを有効に戻すとテストが落ちるか」を必ず確認すること**。
 - **既知の制約(タスク 7.1 で対応済みか確認)**: 出力に生の非 ASCII が乗るため、Windows コンソール(コードページが UTF-8 でない場合)で日本語メッセージが文字化けし得る。`Program.cs` で `Console.OutputEncoding = Encoding.UTF8` を設定した(タスク 3.4 で対応済み。リダイレクト時の例外は握り潰して続行する)。テストはインプロセスの `StringWriter` を使うためこの経路を捕捉しない。

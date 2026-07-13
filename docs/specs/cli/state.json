@@ -1,7 +1,7 @@
 {
   "workflow": "sdd",
   "unit": "cli",
-  "state": "tasks-approved",
+  "state": "implementing",
   "approvals": {
     "requirements": true,
     "design": true,
