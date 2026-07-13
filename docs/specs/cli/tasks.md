@@ -83,7 +83,7 @@
     - 検証コマンド: `dotnet test --filter FullyQualifiedName~ErrorHandlingTests`(画像不在・非画像ファイル・モデル不在・壊れた ONNX・`face_unsupported_f7.onnx` の各分岐を個別にテストする)
 
 - [ ] 5. detect-object コマンド(クラス名解決を含む)
-  - [ ] 5.1 detect-object の正常系(既定のクラス名解決・検出 0 件)を実装する
+  - [x] 5.1 detect-object の正常系(既定のクラス名解決・検出 0 件)を実装する
         _Requirements: 2.1, 2.2, 2.3, 4.1, 4.2, 4.3, 4.5, 4.7, 4.8, 8.1_
         _Boundary: Commands_
         _Depends: 4.1_
