@@ -1,5 +1,5 @@
-using System.Globalization;
 using System.CommandLine;
+using System.Globalization;
 using Recognizer.Cli.Commands;
 using Recognizer.Cli.Errors;
 using Recognizer.Cli.Output;
