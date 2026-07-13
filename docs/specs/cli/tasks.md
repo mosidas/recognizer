@@ -5,7 +5,7 @@
 
 ## タスク一覧
 
-- [ ] 1. プロジェクト骨格とテスト基盤(以降の全タスクの土台)
+- [x] 1. プロジェクト骨格とテスト基盤(以降の全タスクの土台)
   - [x] 1.1 CLI プロジェクトとテストプロジェクトを作成し、`Recognizer.sln` に登録する
         _Requirements: 1.1, 1.2, 1.4, 1.5, 1.7_
         _Boundary: Recognizer.Cli_
@@ -19,7 +19,7 @@
     - 対象ファイル: `tests/Recognizer.Cli.Tests/Recognizer.Cli.Tests.csproj`(変更)、`tests/Recognizer.Cli.Tests/CliTestHost.cs`(新規)
     - 設計参照: design.md §9.1(インプロセス実行)、§9.2(リンク参照・パス解決・一時画像の生成)
     - 検証コマンド: `dotnet test --filter FullyQualifiedName~Recognizer.Cli.Tests`(Fixtures が出力ディレクトリに配置されることを検証するテストを 1 件書く)
-  - [ ] 1.3 既存テストの非回帰を確認する
+  - [x] 1.3 既存テストの非回帰を確認する
         _Requirements: 1.3, 1.6_
         _Boundary: Recognizer.Cli_
         _Depends: 1.1_
@@ -148,4 +148,11 @@
 
 ## Implementation Notes
 
-(このセクションは dev-implement が実装中の学習・選択した知識 port・横断的な気付きを追記する領域)
+- 知識 port: `docs/dev/ports` は存在せず、注入なしで進行(`ports.py --skill dev-implement` の走査結果)。プロジェクト規約は `CLAUDE.md` に従う。
+- タスク 1.3(非回帰確認)はメイン文脈で実測: 既存 224 件グリーン、`git diff --stat HEAD -- src/Recognizer/` および `git status --porcelain src/Recognizer/` が空(要件 1.3 / 1.6 の成立)。
+- `InternalsVisibleTo("Recognizer.Cli.Tests")` は実機能している。top-level statements が生成する `Program` は internal で、これを外すと `CS0122` でコンパイルが落ちることをレビュアーが falsification で確認済み。
+- テストで `GetReferencedAssemblies` による ProjectReference 検査を使わないこと(Roslyn は未使用の参照をマニフェストに残さず偽陰性になる)。コンパイル時の型解決で担保する。
+- `CliTestHost`(tests/Recognizer.Cli.Tests)が提供するヘルパー: `FixturePath` / `CreateWhiteImage` / `CreateBlackImage` / `CreateNonImageFile(ext)` / `CreateClassNamesFile(...)` / `NonExistentPath(ext)`。インスタンスごとに GUID 隔離した一時ディレクトリを持ち `Dispose` で削除する(並行実行で衝突しない)。
+- **タスク 3.4 で `CliTestHost` に `RunCliAsync` を追加すること**(`CliApplication.RunAsync` を `StringWriter` 2 本で呼び `(exitCode, stdout, stderr)` を返す薄いラッパー。design §9.1)。あわせて 1.1 が置いた暫定 `ProjectSetupTests.cs` を削除/吸収する。
+- `face_inputconf_f5.onnx` + 白画像 → 検出あり / 黒画像 → 未検出 を実測で確認済み(research §4 のとおり)。
+- 要件 8.5 のため、パス組み立ては必ず `Path.Combine` を使い区切り文字をハードコードしない。
