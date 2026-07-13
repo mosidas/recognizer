@@ -28,13 +28,13 @@
     - 検証コマンド: `for rid in linux-x64 win-x64 osx-arm64; do dotnet publish src/Recognizer/Recognizer.csproj -c Release -r $rid -o /tmp/pub-$rid; done` の後、各出力に当該 RID の OpenCvSharp native(`libOpenCvSharpExtern.so` / `OpenCvSharpExtern.dll` / `libOpenCvSharpExtern.dylib`)が 1 つだけ存在し、他 RID の OpenCvSharp native が無いことを確認する
 
 - [ ] 2. CI ワークフローの新設
-  - [ ] 2.1 (P) GitHub Actions のワークフローを作成する(3 プラットフォームのマトリクス、`fail-fast: false`、.NET 10 SDK セットアップ、build → test → RID 別 publish)
+  - [x] 2.1 (P) GitHub Actions のワークフローを作成する(3 プラットフォームのマトリクス、`fail-fast: false`、.NET 10 SDK セットアップ、build → test → RID 別 publish)
         _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 5.6_
         _Boundary: CI_
     - 対象ファイル: `.github/workflows/ci.yml`(新規)
     - 設計参照: design.md §4(CI 設計。YAML の全文と各設定の根拠)
     - 検証コマンド: `pip3 install --break-system-packages -q pyyaml && python3 -c "import yaml; d=yaml.safe_load(open('.github/workflows/ci.yml')); assert d['jobs']['test']['strategy']['fail-fast'] is False; print('OK', [m['os'] for m in d['jobs']['test']['strategy']['matrix']['include']])"`(構文が妥当で、`fail-fast: false` と 3 ランナーが定義されていること。devcontainer に PyYAML は未導入のため導入を含める)
-  - [ ] 2.2 ワークフローの `run:` コマンドがローカルの `dotnet build` / `dotnet test` と整合することを確認する(GitHub Actions 自体は devcontainer で実行できないため、ローカル検証はここまで)
+  - [x] 2.2 ワークフローの `run:` コマンドがローカルの `dotnet build` / `dotnet test` と整合することを確認する(GitHub Actions 自体は devcontainer で実行できないため、ローカル検証はここまで)
         _Requirements: 5.7_
         _Boundary: CI_
         _Depends: 2.1, 1.2_
