@@ -171,7 +171,7 @@ sequenceDiagram
 | 6.3 | 整形せず 1 行(末尾の改行 1 個は許容) | `CliJson`(`WriteIndented = false`)+ `WriteLine` 1 回 | |
 | 6.4 | 浮動小数点数は invariant 形式 | `System.Text.Json` の既定(カルチャ非依存のラウンドトリップ表記) | ロケール依存の `,` 小数点にならない |
 | 6.5 | `image` / `image1` / `image2` は位置引数の文字列をそのまま(正規化しない) | 各 Command(`Path.GetFullPath` を呼ばない) | |
-| 7.1 | 実行時/使用法エラーは `error` と `code` を持つ JSON を stderr に出力 | `Errors/ErrorOutput` + `CliApplication` | |
+| 7.1 | 実行時/使用法エラーは `error` と `code` を持つ JSON を stderr に出力 | `ErrorOutput`(`Output/OutputDtos.cs`。他の出力 DTO と同居)+ `CliApplication` | 生成は `Errors/`(`RuntimeErrorMapper` / `UsageErrorClassifier`)、シリアライズは `Output/` |
 | 7.2 | エラー時は stdout に何も出力しない | `CliApplication`(JSON は結果確定後に 1 回だけ書く。例外時は書かない) | 各 Action は「ライブラリ呼び出し → DTO 生成 → 書き出し」の順で、例外は書き出し前に飛ぶ |
 | 7.3 | 終了コードは 成功 0 / 実行時エラー / 使用法エラー の 3 種で、後 2 者は互いに異なる非 0 | `ExitCodes`(`Success = 0` / `RuntimeError = 1` / `UsageError = 2`) | §8.3 |
 | 7.4 | 画像不在・デコード不可は実行時エラー | `RuntimeErrorMapper`(`ArgumentException` → `imageLoadFailed`) | ライブラリは画像失敗に `ArgumentException`(`ImageDecoder.cs:45`)。閾値は事前検証済みのため到達しない(前提 P1) |
