@@ -6,13 +6,13 @@
 ## タスク一覧
 
 - [ ] 1. 依存パッケージの追加と依存検査テストの更新 (P)
-  - [ ] 1.1 `PublicApiTests` の依存パッケージ許可リストを 5 パッケージへ更新する(TDD の RED: この時点では csproj が 3 パッケージのため失敗する)。テスト名の「3つ」も実数へ改名する
+  - [x] 1.1 `PublicApiTests` の依存パッケージ許可リストを 5 パッケージへ更新する(TDD の RED: この時点では csproj が 3 パッケージのため失敗する)。テスト名の「3つ」も実数へ改名する
         _Requirements: 4.2, 4.3, 7.1_
         _Boundary: Recognizer.Tests_
     - 対象ファイル: `tests/Recognizer.Tests/PublicApiTests.cs`(変更)
     - 設計参照: design.md §2.4(5 パッケージの一覧), §3(File Structure Plan), §9(テスト戦略)
     - 検証コマンド: `dotnet test --filter "FullyQualifiedName~PublicApiTests"`(このタスク単体では RED になることを確認する)
-  - [ ] 1.2 `Recognizer.csproj` に `OpenCvSharp4.runtime.win` と `Sdcb.OpenCvSharp4.mini.runtime.osx-arm64` を無条件 `PackageReference` として追加する(GREEN)。why コメントで「なぜ osx-arm64 だけサードパーティか」を残す
+  - [x] 1.2 `Recognizer.csproj` に `OpenCvSharp4.runtime.win` と `Sdcb.OpenCvSharp4.mini.runtime.osx-arm64` を無条件 `PackageReference` として追加する(GREEN)。why コメントで「なぜ osx-arm64 だけサードパーティか」を残す
         _Requirements: 1.1, 1.3, 4.1, 4.2, 7.1_
         _Boundary: Recognizer.csproj_
         _Depends: 1.1_
