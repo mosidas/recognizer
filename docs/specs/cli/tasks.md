@@ -138,7 +138,7 @@
     - 対象ファイル: `README.md`(変更)
     - 設計参照: design.md §8(code の対応表と終了コードを転記する)、§10.1(publish 手順)
     - 検証コマンド: 記載した各コマンド例を実際に CLI で実行し、README の出力例・終了コードが実物と一致することを確認する
-  - [ ] 8.2 (P) api-spec と CLAUDE.md を更新する
+  - [x] 8.2 (P) api-spec と CLAUDE.md を更新する
         _Requirements: 10.4, 10.5_
         _Boundary: Docs_
         _Depends: 7.1_
