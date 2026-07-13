@@ -19,7 +19,7 @@
     - 対象ファイル: `src/Recognizer/Recognizer.csproj`(変更)
     - 設計参照: design.md §2.4(パッケージ表・バージョン), §6(csproj の契約), §10.1(サードパーティ依存の撤退条件)
     - 検証コマンド: `dotnet build && dotnet test`(224 件全 green・Failed 0 / Skipped 0)
-  - [ ] 1.3 3 RID すべてで `dotnet publish` を実行し、OpenCvSharp のネイティブ資産が当該 RID のもののみ配置されることを確認する(手動検証。テストコード化はしない)
+  - [x] 1.3 3 RID すべてで `dotnet publish` を実行し、OpenCvSharp のネイティブ資産が当該 RID のもののみ配置されることを確認する(手動検証。テストコード化はしない)
         _Requirements: 1.2, 1.4, 4.5_
         _Boundary: Recognizer.csproj_
         _Depends: 1.2_
