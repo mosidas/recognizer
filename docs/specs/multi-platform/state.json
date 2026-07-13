@@ -1,9 +1,9 @@
 {
   "workflow": "sdd",
   "unit": "multi-platform",
-  "state": "requirements-generated",
+  "state": "requirements-approved",
   "approvals": {
-    "requirements": false,
+    "requirements": true,
     "design": false,
     "tasks": false
   },
