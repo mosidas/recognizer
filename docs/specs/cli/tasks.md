@@ -44,7 +44,7 @@
     - 対象ファイル: `src/Recognizer.Cli/ExitCodes.cs`(新規)、`src/Recognizer.Cli/Errors/ErrorCodes.cs`(新規)、`src/Recognizer.Cli/Errors/CliRuntimeException.cs`(新規)、`src/Recognizer.Cli/Errors/RuntimeErrorMapper.cs`(新規)、`tests/Recognizer.Cli.Tests/ErrorHandlingTests.cs`(新規)
     - 設計参照: design.md §8.1(例外 → code の対応表と評価順序)、§8.3(終了コード)
     - 検証コマンド: `dotnet test --filter FullyQualifiedName~ErrorHandlingTests`
-  - [ ] 3.2 閾値オプション(数値変換 + 値域検証)を実装する
+  - [x] 3.2 閾値オプション(数値変換 + 値域検証)を実装する
         _Requirements: 2.6_
         _Boundary: Commands_
         _Depends: 3.1_

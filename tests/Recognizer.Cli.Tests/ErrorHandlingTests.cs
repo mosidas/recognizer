@@ -1,3 +1,6 @@
+using System.Globalization;
+using System.CommandLine;
+using Recognizer.Cli.Commands;
 using Recognizer.Cli.Errors;
 using Recognizer.Cli.Output;
 
@@ -166,6 +169,155 @@ public sealed class ErrorHandlingTests
         Assert.Equal("missingArgument", ErrorCodes.MissingArgument);
         Assert.Equal("missingCommand", ErrorCodes.MissingCommand);
         Assert.Equal("invalidUsage", ErrorCodes.InvalidUsage);
+    }
+
+    // 要件 2.6 / design §8.2 順 1: 数値として解釈できない値は invalidOptionValue として収集される。
+    // Why not Option.Validators を使わない: バリデータ内で値を取得すると、変換不能な値で Parse() 自体が
+    // InvalidOperationException を投げ、CLI が JSON を出す前にクラッシュする(research §7.2)。
+    // このテストは「Parse() が例外を投げない」ことを明示的に固定し、Validators への退行を検出する。
+    [Fact]
+    public void Threshold_数値として解釈できない値はInvalidOptionValue()
+    {
+        UsageErrorCollector collector = new();
+        RootCommand root = BuildConfidenceRoot(collector, out _);
+
+        ParseResult? parseResult = null;
+        Exception? exception = Record.Exception(
+            () => parseResult = root.Parse(["detect-face", "--confidence", "abc"]));
+
+        Assert.Null(exception);
+        Assert.Single(parseResult!.Errors);
+        ErrorOutput recorded = Assert.Single(collector.Errors);
+        Assert.Equal(ErrorCodes.InvalidOptionValue, recorded.Code);
+        Assert.Contains("abc", recorded.Error, StringComparison.Ordinal);
+        Assert.Contains("--confidence", recorded.Error, StringComparison.Ordinal);
+    }
+
+    // 要件 2.6 / design §8.2 順 2: 0.0〜1.0 の範囲外は optionValueOutOfRange。
+    // NaN / Infinity は float.TryParse が解析に成功する(research §8)。値域判定を v < 0f || v > 1f と書くと
+    // NaN はあらゆる比較が false になるため素通りし、ライブラリまで到達してしまう(要件 2.6 違反)。
+    [Theory]
+    [InlineData("1.5")]
+    [InlineData("-0.1")]
+    [InlineData("NaN")]
+    [InlineData("Infinity")]
+    [InlineData("-Infinity")]
+    public void Threshold_値域外はOptionValueOutOfRange(string value)
+    {
+        UsageErrorCollector collector = new();
+        RootCommand root = BuildConfidenceRoot(collector, out _);
+
+        ParseResult parseResult = root.Parse(["detect-face", "--confidence", value]);
+
+        Assert.Single(parseResult.Errors);
+        ErrorOutput recorded = Assert.Single(collector.Errors);
+        Assert.Equal(ErrorCodes.OptionValueOutOfRange, recorded.Code);
+        Assert.Contains(value, recorded.Error, StringComparison.Ordinal);
+    }
+
+    // design §8.2 順 5(実測): 値なしのオプションでは CustomParser が呼ばれない。この分岐の分類は
+    // UsageErrorClassifier(タスク 3.3)の担当であり、ここでは collector が空のままであることだけを固定する。
+    [Fact]
+    public void Threshold_値なしのオプションはCustomParserを呼ばない()
+    {
+        UsageErrorCollector collector = new();
+        RootCommand root = BuildConfidenceRoot(collector, out _);
+
+        ParseResult parseResult = root.Parse(["detect-face", "--confidence"]);
+
+        Assert.Single(parseResult.Errors);
+        Assert.Empty(collector.Errors);
+    }
+
+    // 要件 2.6: 値域内の閾値はそのままパースされ、使用法エラーにならない。
+    [Fact]
+    public void Threshold_正常値はパースされる()
+    {
+        UsageErrorCollector collector = new();
+        RootCommand root = BuildConfidenceRoot(collector, out Option<float> confidence);
+
+        ParseResult parseResult = root.Parse(["detect-face", "--confidence", "0.25"]);
+
+        Assert.Empty(parseResult.Errors);
+        Assert.Empty(collector.Errors);
+        Assert.Equal(0.25f, parseResult.GetValue(confidence));
+    }
+
+    // 要件 2.3: オプションを省略すると既定値が使われる(CustomParser は呼ばれない)。
+    [Fact]
+    public void Threshold_省略時は既定値が使われる()
+    {
+        UsageErrorCollector collector = new();
+        RootCommand root = BuildConfidenceRoot(collector, out Option<float> confidence);
+
+        ParseResult parseResult = root.Parse(["detect-face"]);
+
+        Assert.Empty(parseResult.Errors);
+        Assert.Empty(collector.Errors);
+        Assert.Equal(0.7f, parseResult.GetValue(confidence));
+    }
+
+    // design §6 ThresholdOption の事前条件: 既定値自身が 0.0〜1.0 に収まっていること。
+    [Theory]
+    [InlineData(1.5f)]
+    [InlineData(-0.1f)]
+    [InlineData(float.NaN)]
+    public void Threshold_値域外の既定値は事前条件違反(float defaultValue)
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => ThresholdOption.Create("--confidence", defaultValue, new UsageErrorCollector()));
+    }
+
+    // design §6 CliApplication: collector は実行単位ごとに新規生成する(可変状態を実行間で共有しない)。
+    [Fact]
+    public void UsageErrorCollector_インスタンスごとに記録が独立する()
+    {
+        UsageErrorCollector first = new();
+        UsageErrorCollector second = new();
+
+        _ = BuildConfidenceRoot(first, out _).Parse(["detect-face", "--confidence", "abc"]);
+
+        Assert.Single(first.Errors);
+        Assert.Empty(second.Errors);
+    }
+
+    // 小数点がカンマのカルチャでも "0.25" を 0.25 と解釈する(InvariantCulture の固定。design §6)。
+    // Why not: CurrentCulture で TryParse すると de-DE では "0.25" が解釈不能に転び、正当な入力が
+    // 使用法エラーになる。実行環境が invariant のため、カルチャを差し替えないとこの退行は観測できない。
+    [Fact]
+    public void Threshold_小数点がカンマのカルチャでも不変形式で解釈する()
+    {
+        CultureInfo original = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = new CultureInfo("de-DE");
+
+            UsageErrorCollector collector = new();
+            RootCommand root = BuildConfidenceRoot(collector, out Option<float> confidence);
+
+            ParseResult parseResult = root.Parse(["detect-face", "--confidence", "0.25"]);
+
+            Assert.Empty(parseResult.Errors);
+            Assert.Empty(collector.Errors);
+            Assert.Equal(0.25f, parseResult.GetValue(confidence));
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = original;
+        }
+    }
+
+    // CliApplication は未実装(タスク 3.4)のため、コマンドをテスト内で直接組み立てて Parse する(research §7.2 と同形)。
+    private static RootCommand BuildConfidenceRoot(UsageErrorCollector collector, out Option<float> confidence)
+    {
+        confidence = ThresholdOption.Create("--confidence", 0.7f, collector);
+
+        Command detectFace = new("detect-face");
+        detectFace.Add(confidence);
+
+        RootCommand root = new();
+        root.Add(detectFace);
+        return root;
     }
 
     private static Exception CaptureException(Action action)
