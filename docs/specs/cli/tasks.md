@@ -37,7 +37,7 @@
     - 検証コマンド: `dotnet test --filter FullyQualifiedName~JsonOutputTests`(キーが `bbox` であること・1 行であること・`status` が列挙子名であること・カルチャ非依存であることを RED→GREEN で固定する)
 
 - [ ] 3. エラー処理基盤と CLI 制御フロー(最もリスクが高い。コマンドより先に固める)
-  - [ ] 3.1 終了コード・code 定数・内部例外・実行時エラーのマッピングを実装する
+  - [x] 3.1 終了コード・code 定数・内部例外・実行時エラーのマッピングを実装する
         _Requirements: 7.1, 7.3, 7.7_
         _Boundary: Errors_
         _Depends: 2.1_
