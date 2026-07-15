@@ -235,7 +235,7 @@ def read_lines(path: Path) -> list[str]:
 
 
 def parse_requirements(path: Path) -> dict:
-    """requirements.md から要件番号と受け入れ基準 ID を抽出する。
+    """仕様文書(spec.md)から要件番号と受け入れ基準 ID を抽出する。
 
     返り値: {"requirements": [int], "criteria": {"1.1", ...}, "duplicates": ["1.1", ...]}
     """
@@ -280,16 +280,6 @@ def parse_tasks(path: Path) -> list[dict]:
             values = [v.strip() for v in value.split(",") if v.strip()]
             current["annotations"].setdefault(kind, []).extend(values)
     return tasks
-
-
-def parse_traceability_ids(path: Path) -> set[str]:
-    """design.md の表の先頭列から要件 ID(N.M)を抽出する。"""
-    ids: set[str] = set()
-    for line in read_lines(path):
-        m = re.match(r"^\|\s*(\d+\.\d+)\s*\|", line.strip())
-        if m:
-            ids.add(m.group(1))
-    return ids
 
 
 def find_markers(path: Path) -> list[tuple[int, str]]:

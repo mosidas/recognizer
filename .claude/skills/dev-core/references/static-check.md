@@ -27,7 +27,7 @@
     { "from": "initialized", "to": "spec-generated" },
     { "from": "spec-generated", "to": "spec-approved", "gate": "spec" }
   ],
-  "artifacts": { "spec-generated": ["requirements.md"] }
+  "artifacts": { "spec-generated": ["spec.md"] }
 }
 ```
 
@@ -49,10 +49,9 @@ check.py           --workdir <dir> [--def <workflow.json>] [--ports-root docs/de
 
 check.py の `--def` は任意で、与えたときのみ状態検査を行う。Markdown 検査は常に実行され、workdir に存在するファイルだけを対象にする(単独利用の部品でも使える)。
 
-- requirements.md: 要件番号・受け入れ基準 ID の連番/欠番/重複(warning)
-- design.md: トレーサビリティ表と要件 ID の前方/後方照合(未カバー・dangling = warning)
+- spec.md: 要件番号・受け入れ基準 ID の連番/欠番/重複(warning)
 - tasks.md: `_Requirements:` の前方/後方照合(warning)・`_Depends:` の循環(error)と実在(warning)・タスク固有情報(対象ファイル・検証コマンド)の欠落(warning)・`_Knowledge:` の port 実在(warning)
-- 共通: 残存マーカー `[要確認:]`・`UNVERIFIED`(warning)、曖昧語(info。requirements のみ)
+- 共通: 残存マーカー `[要確認:]`・`UNVERIFIED`(warning)、曖昧語(info。spec.md のみ)
 
 Markdown のパースは正規表現ベースのヒューリスティックのため、warning/info は機械が確信できない指摘であり最終判断は AI/人間が行う(error のみが確実な違反)。
 

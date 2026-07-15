@@ -1,6 +1,6 @@
 # 文書ゲート サブエージェント・プロンプト(部品内蔵)
 
-サブ部品(dev-requirements / dev-design / dev-decompose)が、生成した中間生成物を独立検証させるためにサブエージェント(dev-reviewer)へ渡すプロンプトの雛形。文書ゲート系 3 観点(correctness / testability / completeness)を 1 体に包括して依頼する軽量ゲート。`REJECTED` なら部品が最大 2 回自己修復する。composition の承認ゲート(観点別の並列パネル)とは別の、生成直後の一次検証。
+サブ部品(dev-spec / dev-decompose)が、生成した中間生成物を独立検証させるためにサブエージェント(dev-reviewer)へ渡すプロンプトの雛形。文書ゲート系 3 観点(correctness / testability / completeness)を 1 体に包括して依頼する軽量ゲート。`REJECTED` なら部品が最大 2 回自己修復する。composition の承認ゲート(観点別の並列パネル)とは別の、生成直後の一次検証。
 
 ---
 
@@ -9,8 +9,8 @@
 ## 対象
 
 - 文書: `<workdir>/<ファイル名>`
-- 種別: `<requirements | design | tasks>`
-- 上流(この文書が満たすべき意図の源): `<依頼文の要約、または上流成果物のパス(requirements.md / design.md)>`
+- 種別: `<spec | tasks>`
+- 上流(この文書が満たすべき意図の源): `<依頼文の要約、または上流成果物のパス(spec.md)>`
 
 ## 観点(観点カタログ「文書ゲート系」に従う)
 

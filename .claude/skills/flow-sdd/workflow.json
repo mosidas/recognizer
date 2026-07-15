@@ -2,10 +2,8 @@
   "name": "sdd",
   "states": [
     "initialized",
-    "requirements-generated",
-    "requirements-approved",
-    "design-generated",
-    "design-approved",
+    "spec-generated",
+    "spec-approved",
     "tasks-generated",
     "tasks-approved",
     "implementing",
@@ -14,31 +12,22 @@
   "initial": "initialized",
   "final": ["completed"],
   "transitions": [
-    { "from": "initialized", "to": "requirements-generated" },
-    {
-      "from": "requirements-generated",
-      "to": "requirements-approved",
-      "gate": "requirements"
-    },
-    { "from": "requirements-approved", "to": "design-generated" },
-    { "from": "design-generated", "to": "design-approved", "gate": "design" },
-    { "from": "design-approved", "to": "tasks-generated" },
+    { "from": "initialized", "to": "spec-generated" },
+    { "from": "spec-generated", "to": "spec-approved", "gate": "spec" },
+    { "from": "spec-approved", "to": "tasks-generated" },
     { "from": "tasks-generated", "to": "tasks-approved", "gate": "tasks" },
     { "from": "tasks-approved", "to": "implementing" },
     { "from": "implementing", "to": "completed" },
 
-    { "from": "design-generated", "to": "requirements-generated" },
-    { "from": "tasks-generated", "to": "design-generated" },
+    { "from": "tasks-generated", "to": "spec-generated" },
     { "from": "implementing", "to": "tasks-generated" }
   ],
   "artifacts": {
-    "requirements-generated": ["requirements.md"],
-    "requirements-approved": ["requirements.md"],
-    "design-generated": ["requirements.md", "design.md"],
-    "design-approved": ["requirements.md", "design.md"],
-    "tasks-generated": ["requirements.md", "design.md", "tasks.md"],
-    "tasks-approved": ["requirements.md", "design.md", "tasks.md"],
-    "implementing": ["requirements.md", "design.md", "tasks.md"],
-    "completed": ["requirements.md", "design.md", "tasks.md"]
+    "spec-generated": ["spec.md"],
+    "spec-approved": ["spec.md"],
+    "tasks-generated": ["spec.md", "tasks.md"],
+    "tasks-approved": ["spec.md", "tasks.md"],
+    "implementing": ["spec.md", "tasks.md"],
+    "completed": ["spec.md", "tasks.md"]
   }
 }
