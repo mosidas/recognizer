@@ -8,10 +8,9 @@ workdir の state.json・成果物・中間生成物 Markdown を規約に照ら
 検査の 2 系統:
   状態検査     --def でワークフロー定義を与えたときのみ(state.json・成果物存在・凍結)
   Markdown 検査 常に実行(workdir 内に存在するファイルだけ検査する):
-    requirements.md  要件番号・受け入れ基準 ID の連番/欠番/重複
-    design.md        トレーサビリティ表と要件 ID の前方/後方照合
+    spec.md          要件番号・受け入れ基準 ID の連番/欠番/重複
     tasks.md         _Requirements: の前方/後方照合・_Depends: 循環・タスク固有情報(対象ファイル・検証コマンド)・_Knowledge: の実在
-    共通             残存マーカー([要確認:]・UNVERIFIED)・曖昧語(requirements のみ)
+    共通             残存マーカー([要確認:]・UNVERIFIED)・曖昧語(spec.md のみ)
 
 重大度:
   error   機械的に確実な規約違反(exit code 1)
@@ -126,11 +125,11 @@ def check_state(defn: dict, workdir: Path, report: Report) -> None:
 # Markdown 検査(常に実行。存在するファイルのみ)
 
 
-def check_requirements_md(path: Path, report: Report) -> dict | None:
+def check_spec_md(path: Path, report: Report) -> dict | None:
     parsed = lib.parse_requirements(path)
     reqs, criteria = parsed["requirements"], parsed["criteria"]
     if not reqs:
-        report.warning("requirements.md に要件見出し(### Requirement N:)が見つからない")
+        report.warning(f"{path.name} に要件見出し(### Requirement N:)が見つからない")
         return parsed
     expected = list(range(1, len(reqs) + 1))
     if sorted(reqs) != expected:
@@ -150,27 +149,11 @@ def check_requirements_md(path: Path, report: Report) -> dict | None:
     return parsed
 
 
-def check_design_md(path: Path, criteria: set[str], report: Report) -> None:
-    trace_ids = lib.parse_traceability_ids(path)
-    if not trace_ids:
-        report.warning(
-            "design.md にトレーサビリティ表(先頭列が要件 ID の表)が見つからない"
-        )
-        return
-    uncovered = sorted(criteria - trace_ids)
-    if uncovered:
-        report.warning(
-            f"design.md のトレーサビリティ表で未カバーの要件 ID: {', '.join(uncovered)}"
-        )
-    dangling = sorted(trace_ids - criteria)
-    if dangling:
-        report.warning(
-            f"design.md のトレーサビリティ表に requirements.md に無い ID がある: {', '.join(dangling)}"
-        )
-
-
 def check_tasks_md(
-    path: Path, criteria: set[str] | None, ports_root: Path, report: Report
+    path: Path,
+    criteria: set[str] | None,
+    ports_root: Path,
+    report: Report,
 ) -> None:
     tasks = lib.parse_tasks(path)
     if not tasks:
@@ -179,7 +162,7 @@ def check_tasks_md(
     numbers = {t["number"] for t in tasks}
     subtasks = [t for t in tasks if "." in t["number"]] or tasks
 
-    # トレーサビリティ(requirements.md がある場合のみ)
+    # トレーサビリティ(仕様文書がある場合のみ)
     if criteria is not None:
         covered: set[str] = set()
         for t in tasks:
@@ -187,7 +170,7 @@ def check_tasks_md(
                 covered.add(rid)
                 if rid not in criteria:
                     report.warning(
-                        f"タスク {t['number']} の _Requirements: {rid} が requirements.md に無い"
+                        f"タスク {t['number']} の _Requirements: {rid} が spec.md に無い"
                     )
         uncovered = sorted(criteria - covered)
         if uncovered:
@@ -228,27 +211,24 @@ def check_tasks_md(
 
 
 def check_markdown(workdir: Path, ports_root: Path, report: Report) -> None:
-    req_path = workdir / "requirements.md"
-    parsed = check_requirements_md(req_path, report) if req_path.is_file() else None
+    # 仕様文書: spec.md(契約 + 受け入れ基準の 1 文書)
+    spec_path = workdir / "spec.md"
+    parsed = check_spec_md(spec_path, report) if spec_path.is_file() else None
     criteria = parsed["criteria"] if parsed else None
-
-    design_path = workdir / "design.md"
-    if design_path.is_file() and criteria is not None:
-        check_design_md(design_path, criteria, report)
 
     tasks_path = workdir / "tasks.md"
     if tasks_path.is_file():
         check_tasks_md(tasks_path, criteria, ports_root, report)
 
-    for name in ("requirements.md", "design.md", "tasks.md"):
+    for name in ("spec.md", "tasks.md"):
         p = workdir / name
         if not p.is_file():
             continue
         for line_no, marker in lib.find_markers(p):
             report.warning(f"{name}:{line_no} に残存マーカー {marker}")
-    if req_path.is_file():
-        for line_no, word in lib.find_ambiguous(req_path):
-            report.info(f"requirements.md:{line_no} に曖昧語「{word}」(定量化を検討)")
+    if spec_path.is_file():
+        for line_no, word in lib.find_ambiguous(spec_path):
+            report.info(f"{spec_path.name}:{line_no} に曖昧語「{word}」(定量化を検討)")
 
 
 def main() -> None:

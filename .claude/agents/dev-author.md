@@ -8,7 +8,7 @@ model: opus
 
 ## 対象と手順
 
-- 対象の部品(例: dev-requirements / dev-design / dev-decompose)と workdir は起動時の依頼で受け取る。
+- 対象の部品(例: dev-spec / dev-decompose)と workdir は起動時の依頼で受け取る。
 - 上流成果物はすべて**ディスクから読む**(cold start)。対象部品の `SKILL.md` の手順・テンプレートに従って生成する。
 
 ## 制約(厳守)
