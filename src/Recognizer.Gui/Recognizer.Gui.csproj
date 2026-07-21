@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Avalonia デスクトップの標準。WinExe で publish 時にコンソール窓を出さない -->
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Recognizer.Gui</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <!-- コアライブラリと同一の 3 RID を揃える -->
+    <RuntimeIdentifiers>linux-x64;win-x64;osx-arm64</RuntimeIdentifiers>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="12.1.0" />
+    <PackageReference Include="Avalonia.Desktop" Version="12.1.0" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- 依存方向は GUI → コアの単方向。OpenCvSharp4 は参照しない(プレビューは Avalonia Bitmap) -->
+    <ProjectReference Include="..\Recognizer\Recognizer.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Why: GUI の internal 部品(検出サービス・座標変換・ViewModel)をヘッドレステストから直接検証するため -->
+    <InternalsVisibleTo Include="Recognizer.Gui.Tests" />
+  </ItemGroup>
+
+</Project>

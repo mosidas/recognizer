@@ -32,14 +32,14 @@
 
 ## タスク一覧
 
-- [ ] 1. GUI プロジェクトの土台
-  - [ ] 1.1 Avalonia 12 デスクトップアプリのプロジェクトを作成し、最小の App/MainWindow がビルド・起動構成できる状態にする
+- [x] 1. GUI プロジェクトの土台
+  - [x] 1.1 Avalonia 12 デスクトップアプリのプロジェクトを作成し、最小の App/MainWindow がビルド・起動構成できる状態にする
         _Requirements: 9.1, 9.3_
         _Boundary: GuiProject_
     - 対象ファイル: `src/Recognizer.Gui/Recognizer.Gui.csproj`, `src/Recognizer.Gui/Program.cs`, `src/Recognizer.Gui/App.axaml`, `src/Recognizer.Gui/App.axaml.cs`, `src/Recognizer.Gui/Views/MainWindow.axaml`(最小), `src/Recognizer.Gui/Views/MainWindow.axaml.cs`, `Recognizer.sln`(変更)
     - 仕様参照: spec.md §8 実現方針, §7 Requirement 9
     - 検証コマンド: `dotnet build src/Recognizer.Gui/Recognizer.Gui.csproj`
-  - [ ] 1.2 GUI テストプロジェクトを作成し、Avalonia.Headless(xUnit 連携)と fixture ONNX のリンク参照を整える(空のスモークテストが `dotnet test` で走る)
+  - [x] 1.2 GUI テストプロジェクトを作成し、Avalonia.Headless(xUnit 連携)と fixture ONNX のリンク参照を整える(空のスモークテストが `dotnet test` で走る)
         _Requirements: 9.2_
         _Boundary: GuiProject_
         _Depends: 1.1_
@@ -145,4 +145,7 @@
 
 ## Implementation Notes
 
-(このセクションは dev-implement が実装中の学習・選択した知識 port・横断的な気付きを追記する領域。初期は空でよい)
+- **GUI テストは xunit v3 系**(タスク 1 で確定): `Avalonia.Headless.XUnit` 12.1.0 は xunit v3(`xunit.v3` 3.2.2)に依存し、CLI テストの xunit 2.9.3 とは非互換。GUI テストプロジェクト `tests/Recognizer.Gui.Tests` は `xunit.v3` 3.2.2 + `<OutputType>Exe</OutputType>`(v3 はテストを実行可能アセンブリで走らせる)を採用。後続の ViewModel/サービス/座標変換テストもこのプロジェクト内では xunit v3 の作法で書く。ヘッドレスは `[AvaloniaFact]`/`[AvaloniaTheory]`、`[assembly: AvaloniaTestApplication(typeof(TestAppBuilder))]`(`SmokeTest.cs` に定義)の `TestAppBuilder.BuildAvaloniaApp()` が headless 構成の正本。
+- `Program.BuildAvaloniaApp()` は public(headless テストと本番エントリで共有)。App/Program は 12 系標準の `StartWithClassicDesktopLifetime`。
+- fixture ONNX は CLI テストと同一のリンク方式で出力へコピー済み(顔=`face_nchw_standard_f5.onnx` 等・物体=`object_nchw_standard_5c3.onnx` 等・非対応=`*_unsupported_*.onnx`)。タスク4 の検出サービステストで利用可能。
+- GUI 画面表示の実行時検証はコンテナ(linux/amd64・GUI 表示不可)では UNVERIFIED。統括の macOS 実機で確認する前提。

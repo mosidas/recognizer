@@ -1,0 +1,12 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Recognizer.Gui.Views.MainWindow"
+        Title="Recognizer"
+        Width="900" Height="600">
+
+  <!-- 最小構成。入力パネル・プレビュー・結果一覧は後続タスクで肉付けする -->
+  <TextBlock Text="Recognizer GUI"
+             HorizontalAlignment="Center"
+             VerticalAlignment="Center" />
+
+</Window>
