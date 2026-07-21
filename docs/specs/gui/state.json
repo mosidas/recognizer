@@ -1,7 +1,7 @@
 {
   "workflow": "sdd",
   "unit": "gui",
-  "state": "initialized",
+  "state": "spec-generated",
   "approvals": {
     "spec": false,
     "tasks": false
