@@ -95,15 +95,15 @@
     - 仕様参照: spec.md §5.2 エラー表出テーブル, §7 Requirement 6.1-6.3/4.5
     - 検証コマンド: `dotnet test tests/Recognizer.Gui.Tests/Recognizer.Gui.Tests.csproj`
 
-- [ ] 5. ViewModel と状態管理
-  - [ ] 5.1 `ViewModelBase` と `MainViewModel` の入力状態・既定値(顔 0.7/物体 0.5/NMS 0.5)・物体モード時のクラス名指定有効化を実装しテストする
+- [x] 5. ViewModel と状態管理
+  - [x] 5.1 `ViewModelBase` と `MainViewModel` の入力状態・既定値(顔 0.7/物体 0.5/NMS 0.5)・物体モード時のクラス名指定有効化を実装しテストする
         _Requirements: 1.1, 1.2, 1.3_
         _Boundary: ViewModels_
         _Depends: 2.1_
     - 対象ファイル: `src/Recognizer.Gui/ViewModels/ViewModelBase.cs`, `src/Recognizer.Gui/ViewModels/MainViewModel.cs`, `tests/Recognizer.Gui.Tests/MainViewModelTests.cs`
     - 仕様参照: spec.md §5.1, §6 ViewModel 状態, §7 Requirement 1.1-1.3
     - 検証コマンド: `dotnet test tests/Recognizer.Gui.Tests/Recognizer.Gui.Tests.csproj`
-  - [ ] 5.2 実行コマンドを実装する(`IDetectionService` を注入呼び出し・busy 提示・多重実行防止・完了/失敗で busy 解除・`DetectionOutcome` からメッセージと結果一覧を反映)。busy 中の再実行抑止と失敗時のメッセージ表示を分岐ごとにテストする
+  - [x] 5.2 実行コマンドを実装する(`IDetectionService` を注入呼び出し・busy 提示・多重実行防止・完了/失敗で busy 解除・`DetectionOutcome` からメッセージと結果一覧を反映)。busy 中の再実行抑止と失敗時のメッセージ表示を分岐ごとにテストする
         _Requirements: 7.1, 7.2, 7.3, 6.4, 8.3_
         _Boundary: ViewModels_
         _Depends: 5.1, 4.2_
@@ -150,5 +150,6 @@
 - fixture ONNX は CLI テストと同一のリンク方式で出力へコピー済み(顔=`face_nchw_standard_f5.onnx` 等・物体=`object_nchw_standard_5c3.onnx` 等・非対応=`*_unsupported_*.onnx`)。タスク4 の検出サービステストで利用可能。
 - GUI 画面表示の実行時検証はコンテナ(linux/amd64・GUI 表示不可)では UNVERIFIED。統括の macOS 実機で確認する前提。
 - **座標変換の公開シグネチャ**(タスク 3 で確定): `Recognizer.Gui.Rendering.DisplayTransform`(`public readonly record struct`、`Scale`/`OffsetX`/`OffsetY`)。`DisplayTransform.Compute(imageW, imageH, viewportW, viewportH)`(非正で `ArgumentOutOfRangeException`)+ インスタンス `Apply(PointF)`/`Apply(RectangleF)`。Avalonia 非依存(`System.Drawing`)。タスク6 は画像サイズと Avalonia `Bounds` から `Compute` を 1 回呼び、各 BBox/Landmark に `Apply` して Avalonia `Rect`/`Point` へ変換する。
+- **MainViewModel の公開面**(タスク 5 で確定): 公開プロパティ(変更通知)`ModelPath`/`ImagePath`/`Mode`/`ConfidenceThreshold`/`NmsThreshold`/`ClassNamesPath`/`IsClassNamesEnabled`(算出)/`IsBusy`(private set)/`StatusMessage`(private set)/`LastOutcome`(private set)/`Detections`(`ObservableCollection<DetectionOverlay>`)。実行入口は `public Task RunAsync(CancellationToken=default)`(ICommand ではない。View 側で Click ハンドラか薄い RelayCommand で接続)。多重実行防止は await 前に同期で `IsBusy=true`。busy 解除は finally。既定コンストラクタ `MainViewModel()` が実 `DetectionService` を注入する合成ルート。1.4/1.5 の検証は `DetectionService.RunAsync` が担い、ViewModel は InvalidInput メッセージを StatusMessage に表示する。モード切替で信頼度をモード既定へ追従(手動値もリセット=意図的)。
 - **検出サービスの契約**(タスク 4 で確定): `public interface IDetectionService { Task<DetectionOutcome> RunAsync(DetectionRequest, CancellationToken); }`、実装 `public sealed class DetectionService`。RunAsync は予期エラーを例外で投げず必ず `DetectionOutcome` を返す。順序は `Validate()`(InvalidInput 短絡)→クラス名読込(失敗は ClassNamesFileFailed 短絡)→`Task.Run` 内でコア検出。例外写像: OperationCanceled→Cancelled、FileNotFound/OnnxRuntimeException→ModelLoadFailed、NotSupported→UnsupportedModel、(画像)ArgumentException→ImageLoadFailed。ランドマークは [LeftEye,RightEye,Nose,LeftMouth,RightMouth]、顔ラベルは "face #1" 始まり。ViewModel は Validate をバイパスしないこと。テスト画像は 8x8 BMP(1x1 PNG は OpenCV がデコード失敗)。
 - **ドメイン型の生成経路**(タスク 2 で確定): `DetectionOutcome` は `Success(detections, imageDisplayPath)` / `Failure(status, message)` ファクトリが正規経路で、Success⇔Message==null をコンストラクタ強制。`DetectionRequest.Validate()` は問題なければ null、違反時に Status=`InvalidInput` の `DetectionOutcome` を返す(例外は投げない)。後続タスク(サービス・ViewModel)はこれらのファクトリ/検証を使う。`with` 式は検証を再実行しないため使わない。座標は `System.Drawing` 型でコア/OpenCvSharp4 非依存。
