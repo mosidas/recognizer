@@ -1,0 +1,11 @@
+{
+  "workflow": "sdd",
+  "unit": "gui",
+  "state": "initialized",
+  "approvals": {
+    "spec": false,
+    "tasks": false
+  },
+  "created": "2026-07-21",
+  "updated": "2026-07-21"
+}
