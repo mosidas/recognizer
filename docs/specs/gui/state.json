@@ -1,7 +1,7 @@
 {
   "workflow": "sdd",
   "unit": "gui",
-  "state": "tasks-approved",
+  "state": "implementing",
   "approvals": {
     "spec": true,
     "tasks": true
