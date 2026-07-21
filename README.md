@@ -1,12 +1,13 @@
 # recognizer
 
-YOLO 形式の ONNX モデルで動作する顔検出・顔認証・物体検出のコアライブラリ(C# / .NET 10)。
+YOLO 形式の ONNX モデルで動作する顔検出・顔認証・物体検出のコアライブラリ(C# / .NET 10)。ライブラリを端末から呼び出す CLI(`src/Recognizer.Cli`)と、顔検出・物体検出の結果を入力画像に重ねて目視確認するデスクトップ GUI(`src/Recognizer.Gui`)を同梱する。
 
 ## 機能
 
 - 顔検出: YOLO-face 系モデル(YOLOv8n-face / YOLOv11-face 等)による顔のバウンディングボックスとランドマークの検出
 - 顔認証: 顔埋め込みモデル(ArcFace 等)による 1:1 照合と埋め込み抽出
 - 物体検出: YOLOv5/v8/v11 系モデルによる物体検出
+- GUI: モデル・画像・パラメータを変えながら顔検出・物体検出の結果を目視確認するデスクトップアプリ(Avalonia。顔認証は対象外)
 
 モデルの入出力形式(テンソルレイアウト・出力形状)は ONNX メタデータと出力形状から自動判別する。
 
@@ -209,12 +210,36 @@ dotnet publish src/Recognizer.Cli/Recognizer.Cli.csproj -c Release -r linux-x64 
 
 ONNX Runtime / OpenCV のネイティブ資産も実行ファイルに含まれる。実行に必要なのは上表の実行ファイル 1 つだけで、同じディレクトリに出る `.pdb`(デバッグシンボル)や `.lib`(win-x64。リンク用のインポートライブラリ)は配布に含めなくてよい。ONNX モデルは同梱されないため、別途配置する(後述の「モデルファイル」)。
 
+## GUI
+
+顔検出・物体検出の結果を入力画像に重ねて目視確認するデスクトップアプリ(`src/Recognizer.Gui`)。Avalonia(クロスプラットフォーム)で実装し、Linux / Windows / macOS のデスクトップで動作する。モデルの評価やパラメータ(信頼度閾値・NMS 閾値)の調整を、CLI の JSON 出力を別途描画せずに行える。顔認証(`compare-face` 相当)は対象外。
+
+リポジトリから直接起動する。
+
+```bash
+dotnet run --project src/Recognizer.Gui
+```
+
+操作は単一ウィンドウで完結する。
+
+- 検出モードを選ぶ(顔検出 / 物体検出)。
+- モデルファイル(`.onnx`)と入力画像をファイルピッカーで選ぶ。
+- 信頼度閾値・NMS 閾値を指定する(既定は顔検出=0.7 / 物体検出=0.5、NMS=0.5)。
+- 物体検出では、任意でクラス名ファイル(1 行 1 クラス名。CLI の `--classes` と同形式)を指定する。省略時はライブラリの既定解決(80 クラスなら COCO 名、それ以外は `class_{id}`)に委ねる。
+- 実行すると、入力画像に検出結果(バウンディングボックス・信頼度、顔検出ではランドマーク)を重ねて表示し、検出一覧を提示する。
+
+モデルロード失敗・画像ロード失敗・非対応モデル形式などは画面上のメッセージで示し、アプリは終了しない。検出ロジックはコアライブラリ(`FaceDetector` / `ObjectDetector`)を呼ぶだけで、GUI 側では複製しない。
+
+> GUI 画面の見た目・操作の目視確認は各 OS の実機で行う。devcontainer(linux/amd64)は画面表示ができないため、コンテナ内での検証はビルドとヘッドレステスト(`dotnet test`)に限られる。
+
 ## リポジトリ構成
 
 - `src/Recognizer` — 公開 API を提供する net10.0 クラスライブラリ(内部実装は `Internal/` 配下で `internal`)
 - `src/Recognizer.Cli` — ライブラリを端末から呼び出す CLI 実行プロジェクト(単一実行ファイル `recognizer`)
+- `src/Recognizer.Gui` — 顔検出・物体検出の結果を目視確認する Avalonia デスクトップアプリ
 - `tests/Recognizer.Tests` — xUnit テストプロジェクト
 - `tests/Recognizer.Cli.Tests` — CLI の xUnit テストプロジェクト
+- `tests/Recognizer.Gui.Tests` — GUI の xUnit テストプロジェクト(Avalonia ヘッドレス)
 - `tests/Recognizer.Tests/Fixtures` — テスト用のダミー ONNX モデル(生成物をコミット。詳細は同ディレクトリの `README.md`)
 - `tools/generate_test_models.py` — fixture 再生成スクリプト(再生成時のみ使用)
 - `models/` — 実 ONNX モデルの置き場(`.gitignore` 済みで未追跡)

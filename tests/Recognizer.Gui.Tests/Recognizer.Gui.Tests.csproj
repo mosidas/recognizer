@@ -1,0 +1,43 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Why: Avalonia.Headless.XUnit 12.1.0 は xunit v3(xunit.v3.extensibility.core 3.2.2)に依存する。
+         xunit v3 のテストは実行可能アセンブリとして走るため apphost が必要で、Exe 指定が要る
+         (未指定だと "Could not find app host executable" で全テストが検出されない)。
+         このため CLI テスト(xunit v2)とは版が異なる。 -->
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <!-- Why not TestContext.Current.CancellationToken: xUnit1051 はテスト実行のキャンセル応答性の提案。
+         本テスト群はキャンセル挙動の検証で明示トークン(事前キャンセル済み等)や None を意図的に渡すため
+         規則の趣旨に該当せず、リポジトリの 0 warning ビルドを保つため当該規則のみ抑止する。 -->
+    <NoWarn>$(NoWarn);xUnit1051</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.7.0" />
+    <!-- Avalonia.Headless.XUnit 12.1.0 が xunit v3 前提のため v3 に揃える -->
+    <PackageReference Include="xunit.v3" Version="3.2.2" />
+    <!-- Why: dotnet test でのテスト検出・実行に必要な VSTest アダプタ(v3 対応) -->
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+    <!-- 画面表示なしで App / ViewModel をヘッドレス検証する(要件 9.2) -->
+    <PackageReference Include="Avalonia.Headless.XUnit" Version="12.1.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Recognizer.Gui\Recognizer.Gui.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Why not: fixture ONNX を複製しない。既存 tests/Recognizer.Tests/Fixtures を
+         リンク参照して出力ディレクトリへコピーし、1 箇所で管理する -->
+    <None Include="..\Recognizer.Tests\Fixtures\*.onnx" LinkBase="Fixtures" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>
