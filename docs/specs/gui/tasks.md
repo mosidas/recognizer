@@ -111,15 +111,15 @@
     - 仕様参照: spec.md §6 ViewModel 状態, §7 Requirement 6.4/7/8.3
     - 検証コマンド: `dotnet test tests/Recognizer.Gui.Tests/Recognizer.Gui.Tests.csproj`
 
-- [ ] 6. ビュー(レイアウトとオーバーレイ描画)
-  - [ ] 6.1 メインウィンドウの共通レイアウト(入力パネル・画像プレビュー・結果一覧)と各入力要素・ファイルピッカーを `MainViewModel` にバインドする
+- [x] 6. ビュー(レイアウトとオーバーレイ描画)
+  - [x] 6.1 メインウィンドウの共通レイアウト(入力パネル・画像プレビュー・結果一覧)と各入力要素・ファイルピッカーを `MainViewModel` にバインドする
         _Requirements: 8.1, 8.3_
         _Boundary: Views_
         _Depends: 5.2_
     - 対象ファイル: `src/Recognizer.Gui/Views/MainWindow.axaml`(変更), `src/Recognizer.Gui/Views/MainWindow.axaml.cs`(変更)
     - 仕様参照: spec.md §5.1, §3 前提(最小レイアウト), §7 Requirement 8.1/8.3
     - 検証コマンド: `dotnet build src/Recognizer.Gui/Recognizer.Gui.csproj`
-  - [ ] 6.2 `DetectionOverlayControl` を実装し、プレビュー画像上に BBox・信頼度ラベル・(顔で存在時のみ)ランドマークを `DisplayCoordinateMapper` 経由で描画する(ランドマーク有無の分岐を含む。ピクセル描画の目視確認は統括の macOS 実機に委ね、座標写像の適用はテストで確認)
+  - [x] 6.2 `DetectionOverlayControl` を実装し、プレビュー画像上に BBox・信頼度ラベル・(顔で存在時のみ)ランドマークを `DisplayCoordinateMapper` 経由で描画する(ランドマーク有無の分岐を含む。ピクセル描画の目視確認は統括の macOS 実機に委ね、座標写像の適用はテストで確認)
         _Requirements: 2.2, 2.3, 2.4, 3.1, 8.2_
         _Boundary: Views_
         _Depends: 6.1, 3.1_
