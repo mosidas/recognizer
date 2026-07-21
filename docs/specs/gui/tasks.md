@@ -17,7 +17,7 @@
 | `src/Recognizer.Gui/Services/IDetectionService.cs` | 新規 | 検出実行サービスの契約(§5.2)。ViewModel からの注入点 |
 | `src/Recognizer.Gui/Services/DetectionService.cs` | 新規 | `RunAsync` 実装。コア API 呼び出し・例外→`DetectionStatus` 写像・破棄・キャンセル(§5.2) |
 | `src/Recognizer.Gui/Services/ClassNamesFile.cs` | 新規 | クラス名ファイル(1 行 1 クラス名)の読み込み。CLI の internal 実装は参照不可のため GUI 側に再実装 |
-| `src/Recognizer.Gui/Rendering/DisplayCoordinateMapper.cs` | 新規 | ピクセル座標→表示座標の純粋変換(§5.3) |
+| `src/Recognizer.Gui/Rendering/DisplayTransform.cs` | 新規 | ピクセル座標→表示座標の純粋変換 `DisplayTransform`(§5.3。当初計画名 DisplayCoordinateMapper を型名に合わせ改称) |
 | `src/Recognizer.Gui/ViewModels/ViewModelBase.cs` | 新規 | `INotifyPropertyChanged` 基底 |
 | `src/Recognizer.Gui/ViewModels/MainViewModel.cs` | 新規 | 入力状態・既定値・モード別有効化・実行コマンド・busy/多重実行防止・メッセージ(§5.1/§6/§7) |
 | `src/Recognizer.Gui/Views/MainWindow.axaml` / `MainWindow.axaml.cs` | 新規 | 共通レイアウト(入力パネル・プレビュー・結果一覧)・ファイルピッカー配線 |
