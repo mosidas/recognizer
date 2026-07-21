@@ -72,22 +72,22 @@
     - 仕様参照: spec.md §5.3 表示座標変換, §7 Requirement 5
     - 検証コマンド: `dotnet test tests/Recognizer.Gui.Tests/Recognizer.Gui.Tests.csproj`
 
-- [ ] 4. 検出実行サービス
-  - [ ] 4.1 クラス名ファイル読み込み(1 行 1 クラス名・空行除去・読み込み失敗の表出)を実装しテストする
+- [x] 4. 検出実行サービス
+  - [x] 4.1 クラス名ファイル読み込み(1 行 1 クラス名・空行除去・読み込み失敗の表出)を実装しテストする
         _Requirements: 3.2, 3.4_
         _Boundary: Services_
         _Depends: 2.1_
     - 対象ファイル: `src/Recognizer.Gui/Services/ClassNamesFile.cs`, `tests/Recognizer.Gui.Tests/DetectionServiceTests.cs`(クラス名分)
     - 仕様参照: spec.md §5.2, §7 Requirement 3.2/3.4
     - 検証コマンド: `dotnet test tests/Recognizer.Gui.Tests/Recognizer.Gui.Tests.csproj`
-  - [ ] 4.2 `IDetectionService` / `DetectionService.RunAsync` を実装する(顔=`FaceDetector`・物体=`ObjectDetector` を生成→`DetectAsync`→`DetectionOverlay` へ写像→破棄、UI スレッド外実行、0 件成功)
+  - [x] 4.2 `IDetectionService` / `DetectionService.RunAsync` を実装する(顔=`FaceDetector`・物体=`ObjectDetector` を生成→`DetectAsync`→`DetectionOverlay` へ写像→破棄、UI スレッド外実行、0 件成功)
         _Requirements: 4.1, 4.2, 4.3, 4.4, 2.1, 3.1, 3.3_
         _Boundary: Services_
         _Depends: 4.1_
     - 対象ファイル: `src/Recognizer.Gui/Services/IDetectionService.cs`, `src/Recognizer.Gui/Services/DetectionService.cs`, `tests/Recognizer.Gui.Tests/DetectionServiceTests.cs`
     - 仕様参照: spec.md §5.2 検出実行サービス, §7 Requirement 2.1/3.1/3.3/4
     - 検証コマンド: `dotnet test tests/Recognizer.Gui.Tests/Recognizer.Gui.Tests.csproj`
-  - [ ] 4.3 コア例外を結果型へ写す分岐(モデルロード失敗→`ModelLoadFailed`・画像ロード失敗→`ImageLoadFailed`・非対応形式→`UnsupportedModel`・キャンセル→`Cancelled`)を実装し、各分岐を個別にテストする(非対応形式は fixture の `*_unsupported_*.onnx` を使用)
+  - [x] 4.3 コア例外を結果型へ写す分岐(モデルロード失敗→`ModelLoadFailed`・画像ロード失敗→`ImageLoadFailed`・非対応形式→`UnsupportedModel`・キャンセル→`Cancelled`)を実装し、各分岐を個別にテストする(非対応形式は fixture の `*_unsupported_*.onnx` を使用)
         _Requirements: 6.1, 6.2, 6.3, 4.5_
         _Boundary: Services_
         _Depends: 4.2_
@@ -150,4 +150,5 @@
 - fixture ONNX は CLI テストと同一のリンク方式で出力へコピー済み(顔=`face_nchw_standard_f5.onnx` 等・物体=`object_nchw_standard_5c3.onnx` 等・非対応=`*_unsupported_*.onnx`)。タスク4 の検出サービステストで利用可能。
 - GUI 画面表示の実行時検証はコンテナ(linux/amd64・GUI 表示不可)では UNVERIFIED。統括の macOS 実機で確認する前提。
 - **座標変換の公開シグネチャ**(タスク 3 で確定): `Recognizer.Gui.Rendering.DisplayTransform`(`public readonly record struct`、`Scale`/`OffsetX`/`OffsetY`)。`DisplayTransform.Compute(imageW, imageH, viewportW, viewportH)`(非正で `ArgumentOutOfRangeException`)+ インスタンス `Apply(PointF)`/`Apply(RectangleF)`。Avalonia 非依存(`System.Drawing`)。タスク6 は画像サイズと Avalonia `Bounds` から `Compute` を 1 回呼び、各 BBox/Landmark に `Apply` して Avalonia `Rect`/`Point` へ変換する。
+- **検出サービスの契約**(タスク 4 で確定): `public interface IDetectionService { Task<DetectionOutcome> RunAsync(DetectionRequest, CancellationToken); }`、実装 `public sealed class DetectionService`。RunAsync は予期エラーを例外で投げず必ず `DetectionOutcome` を返す。順序は `Validate()`(InvalidInput 短絡)→クラス名読込(失敗は ClassNamesFileFailed 短絡)→`Task.Run` 内でコア検出。例外写像: OperationCanceled→Cancelled、FileNotFound/OnnxRuntimeException→ModelLoadFailed、NotSupported→UnsupportedModel、(画像)ArgumentException→ImageLoadFailed。ランドマークは [LeftEye,RightEye,Nose,LeftMouth,RightMouth]、顔ラベルは "face #1" 始まり。ViewModel は Validate をバイパスしないこと。テスト画像は 8x8 BMP(1x1 PNG は OpenCV がデコード失敗)。
 - **ドメイン型の生成経路**(タスク 2 で確定): `DetectionOutcome` は `Success(detections, imageDisplayPath)` / `Failure(status, message)` ファクトリが正規経路で、Success⇔Message==null をコンストラクタ強制。`DetectionRequest.Validate()` は問題なければ null、違反時に Status=`InvalidInput` の `DetectionOutcome` を返す(例外は投げない)。後続タスク(サービス・ViewModel)はこれらのファクトリ/検証を使う。`with` 式は検証を再実行しないため使わない。座標は `System.Drawing` 型でコア/OpenCvSharp4 非依存。
