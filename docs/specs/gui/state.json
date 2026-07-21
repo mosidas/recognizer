@@ -1,11 +1,15 @@
 {
   "workflow": "sdd",
   "unit": "gui",
-  "state": "implementing",
+  "state": "completed",
   "approvals": {
     "spec": true,
     "tasks": true
   },
   "created": "2026-07-21",
-  "updated": "2026-07-21"
+  "updated": "2026-07-21",
+  "frozen": {
+    "spec.md": "0647dd1cb1ae0c2978e8948ce1677dbb009c3b5577d56bf9042f753e9097522f",
+    "tasks.md": "4270acdc7e8a628abd6dc520be8329ce99cee13adc94b3f2815bc6bba8f60750"
+  }
 }
