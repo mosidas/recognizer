@@ -63,8 +63,8 @@
     - 仕様参照: spec.md §6 `DetectionRequest`, §7 Requirement 1.4/1.5
     - 検証コマンド: `dotnet test tests/Recognizer.Gui.Tests/Recognizer.Gui.Tests.csproj`
 
-- [ ] 3. 表示座標変換 (P)
-  - [ ] 3.1 `DisplayCoordinateMapper`(ピクセル→表示座標。uniform フィットのスケール・中央レターボックス)を実装し、変換・スケール式・非正サイズのガードをテストする
+- [x] 3. 表示座標変換 (P)
+  - [x] 3.1 `DisplayCoordinateMapper`(ピクセル→表示座標。uniform フィットのスケール・中央レターボックス)を実装し、変換・スケール式・非正サイズのガードをテストする
         _Requirements: 5.1, 5.2, 5.3_
         _Boundary: Rendering_
         _Depends: 1.1_
@@ -149,4 +149,5 @@
 - `Program.BuildAvaloniaApp()` は public(headless テストと本番エントリで共有)。App/Program は 12 系標準の `StartWithClassicDesktopLifetime`。
 - fixture ONNX は CLI テストと同一のリンク方式で出力へコピー済み(顔=`face_nchw_standard_f5.onnx` 等・物体=`object_nchw_standard_5c3.onnx` 等・非対応=`*_unsupported_*.onnx`)。タスク4 の検出サービステストで利用可能。
 - GUI 画面表示の実行時検証はコンテナ(linux/amd64・GUI 表示不可)では UNVERIFIED。統括の macOS 実機で確認する前提。
+- **座標変換の公開シグネチャ**(タスク 3 で確定): `Recognizer.Gui.Rendering.DisplayTransform`(`public readonly record struct`、`Scale`/`OffsetX`/`OffsetY`)。`DisplayTransform.Compute(imageW, imageH, viewportW, viewportH)`(非正で `ArgumentOutOfRangeException`)+ インスタンス `Apply(PointF)`/`Apply(RectangleF)`。Avalonia 非依存(`System.Drawing`)。タスク6 は画像サイズと Avalonia `Bounds` から `Compute` を 1 回呼び、各 BBox/Landmark に `Apply` して Avalonia `Rect`/`Point` へ変換する。
 - **ドメイン型の生成経路**(タスク 2 で確定): `DetectionOutcome` は `Success(detections, imageDisplayPath)` / `Failure(status, message)` ファクトリが正規経路で、Success⇔Message==null をコンストラクタ強制。`DetectionRequest.Validate()` は問題なければ null、違反時に Status=`InvalidInput` の `DetectionOutcome` を返す(例外は投げない)。後続タスク(サービス・ViewModel)はこれらのファクトリ/検証を使う。`with` 式は検証を再実行しないため使わない。座標は `System.Drawing` 型でコア/OpenCvSharp4 非依存。
