@@ -10,6 +10,10 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
+    <!-- Why not TestContext.Current.CancellationToken: xUnit1051 はテスト実行のキャンセル応答性の提案。
+         本テスト群はキャンセル挙動の検証で明示トークン(事前キャンセル済み等)や None を意図的に渡すため
+         規則の趣旨に該当せず、リポジトリの 0 warning ビルドを保つため当該規則のみ抑止する。 -->
+    <NoWarn>$(NoWarn);xUnit1051</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>

@@ -127,15 +127,15 @@
     - 仕様参照: spec.md §5.3, §7 Requirement 2.2-2.4/3.1/8.2
     - 検証コマンド: `dotnet test tests/Recognizer.Gui.Tests/Recognizer.Gui.Tests.csproj`
 
-- [ ] 7. ドキュメント反映と全体検証
-  - [ ] 7.1 README に GUI アプリの起動方法・使い方(モデル/画像/パラメータ指定・モード切替・クラス名ファイル)を追記する
+- [x] 7. ドキュメント反映と全体検証
+  - [x] 7.1 README に GUI アプリの起動方法・使い方(モデル/画像/パラメータ指定・モード切替・クラス名ファイル)を追記する
         _Requirements: 1.1_
         _Boundary: Docs_
         _Depends: 6.2_
     - 対象ファイル: `README.md`(変更)
     - 仕様参照: spec.md §1, §5.1
     - 検証コマンド: `dotnet build`
-  - [ ] 7.2 ソリューション全体を対象 RID(linux-x64 / win-x64 / osx-arm64)でビルドし、全テストを実行して通ることを確認する(コンテナ内は build + `dotnet test`。macOS 実機の目視確認は統括が担う)
+  - [x] 7.2 ソリューション全体を対象 RID(linux-x64 / win-x64 / osx-arm64)でビルドし、全テストを実行して通ることを確認する(コンテナ内は build + `dotnet test`。macOS 実機の目視確認は統括が担う)
         _Requirements: 9.1, 9.3_
         _Boundary: GuiProject_
         _Depends: 7.1_
