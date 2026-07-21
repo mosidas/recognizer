@@ -1,17 +1,5 @@
 namespace Recognizer.Gui.Models;
 
-/// <summary>検出実行の結果種別。予期されるエラーは例外ではなくこの種別で表す。</summary>
-public enum DetectionStatus
-{
-    Success,
-    ModelLoadFailed,
-    ImageLoadFailed,
-    UnsupportedModel,
-    ClassNamesFileFailed,
-    Cancelled,
-    InvalidInput,
-}
-
 /// <summary>検出実行の結果型。</summary>
 public sealed record DetectionOutcome
 {
@@ -32,6 +20,8 @@ public sealed record DetectionOutcome
         string? imageDisplayPath,
         string? message)
     {
+        ArgumentNullException.ThrowIfNull(detections);
+
         // Why not: Success⇔Message==null は呼び出し側のロジック整合性の問題(プログラミングエラー)であり、
         // 予期されるエラーとは異なる。生成時点で契約破りを検出し、不整合な結果の伝播を防ぐ。
         if (status == DetectionStatus.Success && message is not null)

@@ -13,7 +13,8 @@
 | `src/Recognizer.Gui/Models/DetectionMode.cs` | 新規 | 検出モード enum(§6) |
 | `src/Recognizer.Gui/Models/DetectionRequest.cs` | 新規 | 検出要求 record + 不変条件の検証(§6) |
 | `src/Recognizer.Gui/Models/DetectionOverlay.cs` | 新規 | モード非依存の描画・一覧用 record(§6) |
-| `src/Recognizer.Gui/Models/DetectionOutcome.cs` | 新規 | 結果型 record + `DetectionStatus` enum(§6) |
+| `src/Recognizer.Gui/Models/DetectionOutcome.cs` | 新規 | 結果型 record(§6) |
+| `src/Recognizer.Gui/Models/DetectionStatus.cs` | 新規 | 結果種別 enum(§6。既存コアの status enum 分離パターンに合わせ独立ファイル) |
 | `src/Recognizer.Gui/Services/IDetectionService.cs` | 新規 | 検出実行サービスの契約(§5.2)。ViewModel からの注入点 |
 | `src/Recognizer.Gui/Services/DetectionService.cs` | 新規 | `RunAsync` 実装。コア API 呼び出し・例外→`DetectionStatus` 写像・破棄・キャンセル(§5.2) |
 | `src/Recognizer.Gui/Services/ClassNamesFile.cs` | 新規 | クラス名ファイル(1 行 1 クラス名)の読み込み。CLI の internal 実装は参照不可のため GUI 側に再実装 |
@@ -24,7 +25,7 @@
 | `src/Recognizer.Gui/Views/DetectionOverlayControl.cs` | 新規 | プレビュー上に BBox・ランドマーク・ラベルを描く Avalonia コントロール(`DisplayCoordinateMapper` を使用) |
 | `tests/Recognizer.Gui.Tests/Recognizer.Gui.Tests.csproj` | 新規 | xUnit + `Avalonia.Headless.XUnit` + fixture ONNX のリンク参照 |
 | `tests/Recognizer.Gui.Tests/DetectionRequestTests.cs` | 新規 | 入力検証(閾値範囲・パス非空)のテスト |
-| `tests/Recognizer.Gui.Tests/DisplayCoordinateMapperTests.cs` | 新規 | 座標変換のテスト |
+| `tests/Recognizer.Gui.Tests/DisplayTransformTests.cs` | 新規 | 座標変換のテスト(型名に合わせ改称) |
 | `tests/Recognizer.Gui.Tests/DetectionServiceTests.cs` | 新規 | 検出実行サービスのテスト(fixture ONNX) |
 | `tests/Recognizer.Gui.Tests/MainViewModelTests.cs` | 新規 | ViewModel の状態・既定値・busy・メッセージのテスト(headless) |
 | `Recognizer.sln` | 変更 | `Recognizer.Gui` / `Recognizer.Gui.Tests` の 2 プロジェクトを追加 |
