@@ -1,9 +1,9 @@
 {
   "workflow": "sdd",
   "unit": "gui",
-  "state": "spec-generated",
+  "state": "spec-approved",
   "approvals": {
-    "spec": false,
+    "spec": true,
     "tasks": false
   },
   "created": "2026-07-21",
