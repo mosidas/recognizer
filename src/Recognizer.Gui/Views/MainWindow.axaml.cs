@@ -146,7 +146,7 @@ public sealed partial class MainWindow : Window
             var file = await PickFileAsync("入力画像を選択", "画像", "*.png", "*.jpg", "*.jpeg", "*.bmp");
             if (file is not null && _viewModel is not null)
             {
-                _viewModel.ImagePath = file;
+                _viewModel.SelectImage(file);
             }
         }
         catch (Exception)

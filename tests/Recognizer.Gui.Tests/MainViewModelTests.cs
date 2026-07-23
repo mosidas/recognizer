@@ -179,6 +179,49 @@ public sealed class MainViewModelTests
         Assert.Null(fake.LastRequest!.ClassNamesPath);
     }
 
+    // ---- 1.6 画像選択時のクリア ----
+
+    [Fact]
+    public async Task 画像を選択すると前回の検出結果をクリアする()
+    {
+        FakeDetectionService fake = new()
+        {
+            Handler = (_, _) => Task.FromResult(
+                DetectionOutcome.Success([Overlay("face #0")], "i")),
+        };
+        MainViewModel vm = new(fake) { ModelPath = "m", ImagePath = "i" };
+        await vm.RunAsync();
+        Assert.Single(vm.Detections);
+
+        vm.SelectImage("j");
+
+        Assert.Equal("j", vm.ImagePath);
+        Assert.Empty(vm.Detections);
+        Assert.Null(vm.LastOutcome);
+        Assert.Null(vm.StatusMessage);
+    }
+
+    [Fact]
+    public async Task 同一画像を選び直しても前回の検出結果をクリアする()
+    {
+        FakeDetectionService fake = new()
+        {
+            Handler = (_, _) => Task.FromResult(
+                DetectionOutcome.Success([Overlay("face #0")], "i")),
+        };
+        MainViewModel vm = new(fake) { ModelPath = "m", ImagePath = "i" };
+        await vm.RunAsync();
+        Assert.Single(vm.Detections);
+
+        // 同一パスの選び直し(プロパティ変更は発火しない)でもクリアする(要件 1.6)。
+        vm.SelectImage("i");
+
+        Assert.Equal("i", vm.ImagePath);
+        Assert.Empty(vm.Detections);
+        Assert.Null(vm.LastOutcome);
+        Assert.Null(vm.StatusMessage);
+    }
+
     // ---- 6.4 失敗時のメッセージ表示 ----
 
     [Fact]
