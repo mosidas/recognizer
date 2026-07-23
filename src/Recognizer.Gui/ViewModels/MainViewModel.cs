@@ -110,6 +110,18 @@ public sealed class MainViewModel : ViewModelBase
     public ObservableCollection<DetectionOverlay> Detections { get; } = [];
 
     /// <summary>
+    /// 入力画像の選択を反映する。前回の検出結果は選択後の画像とは無関係なため、
+    /// 同一ファイルの選び直しを含め、選択のたびに検出結果と実行由来の状態をクリアする(要件 1.6)。
+    /// </summary>
+    public void SelectImage(string path)
+    {
+        ImagePath = path;
+        Detections.Clear();
+        LastOutcome = null;
+        StatusMessage = null;
+    }
+
+    /// <summary>
     /// 検出を実行する。busy 中は新たな実行を開始しない(多重実行防止)。
     /// いかなる場合も未処理例外を投げず、失敗は状態へ反映して busy を解除する。
     /// </summary>
