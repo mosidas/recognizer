@@ -439,4 +439,4 @@ Thumbs.db
 Desktop.ini
 
 # --- ONNX モデル（別途ダウンロード） ---
-models/*.onnx
+models/
