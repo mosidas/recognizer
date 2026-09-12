@@ -1,0 +1,24 @@
+{
+  "groups": {
+    "dev": {
+      "skills": [
+        "dev-check",
+        "dev-core",
+        "dev-decompose",
+        "dev-implement",
+        "dev-release",
+        "dev-roadmap",
+        "dev-spec",
+        "flow-sdd"
+      ],
+      "agents": [
+        ".claude/agents/dev-debugger.md",
+        ".claude/agents/dev-explorer.md",
+        ".claude/agents/dev-implement-runner.md",
+        ".claude/agents/dev-implementer.md",
+        ".claude/agents/dev-reviewer.md",
+        ".claude/agents/dev-roadmap-planner.md"
+      ]
+    }
+  }
+}

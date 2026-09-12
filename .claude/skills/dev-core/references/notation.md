@@ -18,6 +18,7 @@
 | `_Boundary: <名前>_`        | 責務を持つコンポーネント境界                                                                                   | `_Boundary: AuthService_`            |
 | `_Depends: <タスク番号列>_` | 依存する先行タスク                                                                                             | `_Depends: 2, 3_`                    |
 | `(P)`                       | 境界が独立しており並行実行可                                                                                   | `- [ ] 4. (P) ...`                   |
+| `_Interfaces: Consumes <...> / Produces <...>_` | 隣接タスクと共有するシグネチャ。Consumes は先行タスクから使うもの、Produces は後続タスクが依存するもの(関数名・引数と戻り値の型) | `_Interfaces: Consumes AuthService.verify(token: string): Claims / Produces SessionStore.save(claims: Claims): void_` |
 | `_Knowledge: <name 列>_`    | 知識 port の明示上書き(通常は書かない。選択は port マッピングに任せ、特定 port の注入を固定したいときのみ書く) | `_Knowledge: lang-typescript, auth_` |
 | `_Blocked: <根本原因>_`     | 有界リトライで解決しなかったタスクの印                                                                         | `_Blocked: 外部 API の仕様が未確定_` |
 

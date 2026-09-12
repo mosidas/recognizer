@@ -10,6 +10,8 @@ workdir の state.json・成果物・中間生成物 Markdown を規約に照ら
   Markdown 検査 常に実行(workdir 内に存在するファイルだけ検査する):
     spec.md          要件番号・受け入れ基準 ID の連番/欠番/重複
     tasks.md         _Requirements: の前方/後方照合・_Depends: 循環・タスク固有情報(対象ファイル・検証コマンド)・_Knowledge: の実在
+    対象ファイル     tasks.md が挙げる既存ファイルの行数(閾値超過を warning)。基点(--repo-root)が
+                     解決できない場合・パスが基点の外を指す場合は、検査できなかったことを warning にする
     共通             残存マーカー([要確認:]・UNVERIFIED)・曖昧語(spec.md のみ)
 
 重大度:
@@ -18,7 +20,8 @@ workdir の state.json・成果物・中間生成物 Markdown を規約に照ら
   info    参考情報
 
 使い方:
-  check.py --workdir <dir> [--def <workflow.json>] [--ports-root docs/dev/ports] [--json]
+  check.py --workdir <dir> [--def <workflow.json>] [--ports-root docs/dev/ports]
+           [--repo-root .] [--max-file-lines 600] [--json]
 """
 
 from __future__ import annotations
@@ -150,12 +153,11 @@ def check_spec_md(path: Path, report: Report) -> dict | None:
 
 
 def check_tasks_md(
-    path: Path,
+    tasks: list[dict],
     criteria: set[str] | None,
     ports_root: Path,
     report: Report,
 ) -> None:
-    tasks = lib.parse_tasks(path)
     if not tasks:
         report.warning("tasks.md にタスク(チェックボックス行)が見つからない")
         return
@@ -210,7 +212,58 @@ def check_tasks_md(
         )
 
 
-def check_markdown(workdir: Path, ports_root: Path, report: Report) -> None:
+def check_target_file_sizes(
+    tasks: list[dict], repo_root: Path, max_lines: int, report: Report
+) -> None:
+    """タスクの対象ファイルのうち、既存ファイルの行数が閾値を超えるものを指摘する。
+
+    新規作成予定のファイル(未存在)とテンプレートのプレースホルダは対象外になる。
+    パスの基点が解決できない場合・パスが基点の外を指す場合は、黙って飛ばさず指摘する
+    (検査できなかったことと「超過なし」を区別する)。
+    """
+    targets = lib.parse_target_files(tasks)
+    if not targets:
+        return
+    if not repo_root.is_dir():
+        report.warning(
+            f"対象ファイルの行数を検査できない: --repo-root {repo_root} が存在しない"
+            "(リポジトリルートで実行するか --repo-root で指定する)"
+        )
+        return
+    base = repo_root.resolve()
+    for rel, numbers in sorted(targets.items()):
+        target = repo_root / rel
+        try:
+            resolved = target.resolve()
+        except OSError:
+            continue
+        if not resolved.is_relative_to(base):
+            report.warning(
+                f"タスク {', '.join(numbers)} の対象ファイル {rel} が"
+                f"リポジトリルート({repo_root})の外を指すため検査しない"
+            )
+            continue
+        if not target.is_file():
+            continue
+        try:
+            count = len(lib.read_lines(target))
+        except (OSError, UnicodeDecodeError):
+            continue
+        if count > max_lines:
+            report.warning(
+                f"{rel} が {count} 行(閾値 {max_lines} 行)。"
+                f"タスク {', '.join(numbers)} の対象ファイル。"
+                "責務の分割を検討する(分割の要否は structure 観点の意味判断で決める)"
+            )
+
+
+def check_markdown(
+    workdir: Path,
+    ports_root: Path,
+    repo_root: Path,
+    max_file_lines: int,
+    report: Report,
+) -> None:
     # 仕様文書: spec.md(契約 + 受け入れ基準の 1 文書)
     spec_path = workdir / "spec.md"
     parsed = check_spec_md(spec_path, report) if spec_path.is_file() else None
@@ -218,7 +271,9 @@ def check_markdown(workdir: Path, ports_root: Path, report: Report) -> None:
 
     tasks_path = workdir / "tasks.md"
     if tasks_path.is_file():
-        check_tasks_md(tasks_path, criteria, ports_root, report)
+        tasks = lib.parse_tasks(tasks_path)
+        check_tasks_md(tasks, criteria, ports_root, report)
+        check_target_file_sizes(tasks, repo_root, max_file_lines, report)
 
     for name in ("spec.md", "tasks.md"):
         p = workdir / name
@@ -226,6 +281,10 @@ def check_markdown(workdir: Path, ports_root: Path, report: Report) -> None:
             continue
         for line_no, marker in lib.find_markers(p):
             report.warning(f"{name}:{line_no} に残存マーカー {marker}")
+        for line_no, tag in lib.find_tool_markup(p):
+            report.error(
+                f"{name}:{line_no} にツールのマークアップ混入 {tag}(行全体が閉じタグ 1 個)"
+            )
     if spec_path.is_file():
         for line_no, word in lib.find_ambiguous(spec_path):
             report.info(f"{spec_path.name}:{line_no} に曖昧語「{word}」(定量化を検討)")
@@ -239,6 +298,15 @@ def main() -> None:
     parser.add_argument("--workdir", required=True, help="成果物ディレクトリ")
     parser.add_argument(
         "--ports-root", default="docs/dev/ports", help="port ルート(_Knowledge: 照合用)"
+    )
+    parser.add_argument(
+        "--repo-root", default=".", help="対象ファイルの解決基点(行数検査用)"
+    )
+    parser.add_argument(
+        "--max-file-lines",
+        type=int,
+        default=600,
+        help="対象ファイルの行数の閾値(超過を warning。既定 600)",
     )
     parser.add_argument("--json", action="store_true", help="JSON で出力する")
     args = parser.parse_args()
@@ -255,7 +323,13 @@ def main() -> None:
         if report.count("error") == 0:
             check_state(defn_raw, workdir, report)
 
-    check_markdown(workdir, Path(args.ports_root), report)
+    check_markdown(
+        workdir,
+        Path(args.ports_root),
+        Path(args.repo_root),
+        args.max_file_lines,
+        report,
+    )
 
     errors, warnings = report.count("error"), report.count("warning")
     if args.json:

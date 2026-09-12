@@ -1,0 +1,18 @@
+{
+  "name": "roadmap",
+  "states": ["initialized", "roadmap-generated", "roadmap-approved", "frozen"],
+  "initial": "initialized",
+  "final": ["frozen"],
+  "transitions": [
+    { "from": "initialized", "to": "roadmap-generated" },
+    { "from": "roadmap-generated", "to": "roadmap-approved", "gate": "roadmap" },
+    { "from": "roadmap-approved", "to": "frozen" },
+
+    { "from": "roadmap-approved", "to": "roadmap-generated" }
+  ],
+  "artifacts": {
+    "roadmap-generated": ["roadmap.md"],
+    "roadmap-approved": ["roadmap.md"],
+    "frozen": ["roadmap.md"]
+  }
+}

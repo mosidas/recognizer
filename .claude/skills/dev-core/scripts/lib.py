@@ -9,6 +9,7 @@ from __future__ import annotations
 import datetime
 import hashlib
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -215,10 +216,80 @@ def freeze(workdir: Path, defn: dict, state: dict) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
+# workdir の連番
+#
+# workdir は作業単位ごとに増え、完了状態への到達で凍結されて以後は参照専用になる。
+# 作成順を名前から読み取れるよう、ルート直下に `NNN-<unit>` の形で採番する。
+
+SEQ_PREFIX_RE = re.compile(r"^(\d{3,})-")
+SEQ_WIDTH = 3
+
+
+def sequence_of(name: str) -> int | None:
+    """`NNN-<unit>` 形式の名前から連番を取り出す(形式に合わなければ None)。"""
+    m = SEQ_PREFIX_RE.match(name)
+    return int(m.group(1)) if m else None
+
+
+def strip_sequence(name: str) -> str:
+    """名前の先頭の連番(`NNN-`)を取り除く。連番が無ければそのまま返す。"""
+    return SEQ_PREFIX_RE.sub("", name, count=1)
+
+
+def next_sequence(root: Path) -> int:
+    """root 直下の連番付きディレクトリの最大番号 + 1 を返す(最初は 1)。
+
+    連番を持たないディレクトリは数に入れない(採番の導入前に作った workdir を
+    そのまま置ける)。欠番があっても最大番号の次を返し、既存の番号を振り直さない。
+    桁数は `SEQ_WIDTH` 以上を受け付けるため、999 を超えても採番が続く。
+    """
+    numbers: list[int] = []
+    if root.is_dir():
+        for child in root.iterdir():
+            if not child.is_dir():
+                continue
+            n = sequence_of(child.name)
+            if n is not None:
+                numbers.append(n)
+    return max(numbers, default=0) + 1
+
+
+def numbered_workdir(root: Path, unit: str) -> Path:
+    """root 直下に次の連番を付けた workdir のパスを組み立てる(作成はしない)。"""
+    return root / f"{next_sequence(root):0{SEQ_WIDTH}d}-{unit}"
+
+
+def find_unit_dir(root: Path, unit: str, *, recursive: bool = False) -> Path | None:
+    """root 配下から同じ作業単位の workdir を探す(連番の有無を問わない)。
+
+    採番済みの `NNN-<unit>` と、連番を持たない `<unit>` のどちらも同じ作業単位と
+    見なす。二重採番(同じ unit に別番号の workdir を作ること)の検出に使う。
+    既定では root 直下だけを見る。`recursive` を真にすると root 配下の全階層を
+    走査する(roadmap のディレクトリを跨いだ unit 名の一意性の検査に使う)。
+    """
+    if not root.is_dir():
+        return None
+    children = root.rglob("*") if recursive else root.iterdir()
+    for child in sorted(children):
+        if child.is_dir() and strip_sequence(child.name) == unit:
+            return child
+    return None
+
+
+def unit_name_problem(unit: str) -> str | None:
+    """workdir のディレクトリ名に使えない unit 名を検出する(問題が無ければ None)。"""
+    if not unit:
+        return "unit 名が空です"
+    if "/" in unit or "\\" in unit:
+        return f"unit 名にパス区切りを含められません: {unit!r}"
+    if sequence_of(unit) is not None:
+        return f"unit 名が連番で始まっています: {unit!r}(連番はエンジンが付けます)"
+    return None
+
+
+# ---------------------------------------------------------------------------
 # 中間生成物 Markdown の決定論的パース補助(check.py が使う。正規表現ベースの
 # ヒューリスティックのため、結果の最終判断は AI/人間が行う)
-
-import re
 
 REQ_HEADING_RE = re.compile(r"^###\s+Requirement\s+(\d+)\s*:")
 CRITERIA_RE = re.compile(r"^(\d+)\.(\d+)\.\s")
@@ -226,7 +297,10 @@ TASK_RE = re.compile(r"^\s*-\s\[(?: |x)\]\*?\s+(\d+(?:\.\d+)?)[\s.]")
 ANNOTATION_RE = re.compile(
     r"_(Requirements|Boundary|Depends|Knowledge|Blocked):\s*([^_]*)_"
 )
+FENCE_RE = re.compile(r"^\s*(?:```|~~~)")
+HEADING_RE = re.compile(r"^#{1,6}\s")
 MARKERS = ("[要確認:", "UNVERIFIED")
+TOOL_MARKUP_RE = re.compile(r"^\s*</[A-Za-z][\w.:-]*>\s*$")
 AMBIGUOUS_WORDS = ("適切に", "高速に", "柔軟に", "十分な", "ユーザーフレンドリー")
 
 
@@ -263,11 +337,22 @@ def parse_tasks(path: Path) -> list[dict]:
     """tasks.md からタスク一覧を抽出する。
 
     各タスク: {"number", "line", "annotations": {種別: [値]}, "body": [行]}
-    annotations の値はカンマ区切りを分解済み。body はタスク行から次のタスク行まで。
+    annotations の値はカンマ区切りを分解済み。body はタスク行から、次のタスク行または
+    次の見出し(`## Implementation Notes` 等)までとする。コードブロック(``` / ~~~)の
+    内側は、記述例であってタスクの定義ではないため body に含めない。
     """
     tasks: list[dict] = []
     current: dict | None = None
+    in_fence = False
     for i, line in enumerate(read_lines(path), start=1):
+        if FENCE_RE.match(line):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        if HEADING_RE.match(line):
+            current = None
+            continue
         m = TASK_RE.match(line)
         if m:
             current = {"number": m.group(1), "line": i, "annotations": {}, "body": []}
@@ -282,6 +367,48 @@ def parse_tasks(path: Path) -> list[dict]:
     return tasks
 
 
+TARGET_FILES_RE = re.compile(r"対象ファイル\s*[:：](.*)")
+BACKTICK_RE = re.compile(r"`([^`]+)`")
+# 「対象ファイル」の記述を打ち切る行(別のラベル付き項目・空行)。
+LABELED_ITEM_RE = re.compile(r"^\s*(?:[-*]\s*)?\S+\s*[:：]")
+
+
+def parse_target_files(tasks: list[dict]) -> dict[str, list[str]]:
+    """タスクの「対象ファイル」行からファイルパスを抽出する。
+
+    返り値: {リポジトリ相対パス: [そのファイルを対象にするタスク番号]}。
+    バッククォートで囲まれ、区切り(/)または拡張子(.)を持つ字句のみを拾う。
+    「対象ファイル」の記述が次の行へ折り返している場合も、別のラベル付き項目
+    (`検証コマンド:` 等)または空行に達するまでを同じ記述として扱う。
+    """
+    result: dict[str, list[str]] = {}
+    for t in tasks:
+        body = t["body"]
+        i = 0
+        while i < len(body):
+            m = TARGET_FILES_RE.search(body[i])
+            if not m:
+                i += 1
+                continue
+            chunk = [m.group(1)]
+            j = i + 1
+            while j < len(body):
+                nxt = body[j]
+                if not nxt.strip() or LABELED_ITEM_RE.match(nxt):
+                    break
+                chunk.append(nxt)
+                j += 1
+            for raw in BACKTICK_RE.findall(" ".join(chunk)):
+                path = raw.strip()
+                if "/" not in path and "." not in path:
+                    continue
+                numbers = result.setdefault(path, [])
+                if t["number"] not in numbers:
+                    numbers.append(t["number"])
+            i = j
+    return result
+
+
 def find_markers(path: Path) -> list[tuple[int, str]]:
     """残存マーカー([要確認:]・UNVERIFIED)の (行番号, マーカー) を返す。"""
     found: list[tuple[int, str]] = []
@@ -289,6 +416,27 @@ def find_markers(path: Path) -> list[tuple[int, str]]:
         for marker in MARKERS:
             if marker in line:
                 found.append((i, marker))
+    return found
+
+
+def find_tool_markup(path: Path) -> list[tuple[int, str]]:
+    """行全体が閉じタグ 1 個で構成される行(ツールのマークアップ混入)の (行番号, タグ) を返す。
+
+    生成セッションのツールのマークアップ(</content>・</invoke> 等)が中間生成物へ
+    混入したままコミットされる事故を検出する。コードフェンス内はサンプルとして
+    正当に閉じタグを含みうるため対象外。インラインコードでの引用は行全体が
+    タグにならないため一致しない。
+    """
+    found: list[tuple[int, str]] = []
+    in_fence = False
+    for i, line in enumerate(read_lines(path), start=1):
+        if FENCE_RE.match(line):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        if TOOL_MARKUP_RE.match(line):
+            found.append((i, line.strip()))
     return found
 
 
