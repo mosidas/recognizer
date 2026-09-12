@@ -6,12 +6,13 @@ state.json を生成・更新する。定義にない状態・遷移・ゲート
 state.json の手書き編集はせず、常に本スクリプトを使う。
 
 使い方:
+  state.py init      --def <workflow.json> --root <dir> --unit <name> [--unique-root <dir>]
   state.py init      --def <workflow.json> --workdir <dir> [--unit <name>]
   state.py set-state --def <workflow.json> --workdir <dir> <state>
   state.py approve   --def <workflow.json> --workdir <dir> <gate>
   state.py show      --workdir <dir>
   state.py status    --def <workflow.json> --workdir <dir> [--json]
-  state.py scan      --def <workflow.json> --root <dir> [--json]
+  state.py scan      --def <workflow.json> [--def <other.json> ...] --root <dir> [--json]
 """
 
 from __future__ import annotations
@@ -25,16 +26,46 @@ sys.path.insert(0, str(Path(__file__).parent))
 import lib  # noqa: E402
 
 
+def _init_workdir(args: argparse.Namespace) -> tuple[Path, str]:
+    """init が使う workdir と unit 名を決める。
+
+    `--root` を与えた場合はルート直下に `NNN-<unit>` を採番する。`--workdir` を
+    与えた場合は指定のパスをそのまま使い、採番しない(連番の導入前に作った
+    workdir を従来どおり初期化できる)。
+    """
+    if not args.root:
+        workdir = Path(args.workdir)
+        return workdir, args.unit or workdir.name
+    if not args.unit:
+        lib.die("--root には --unit が要ります(ディレクトリ名 NNN-<unit> の組み立てに使います)")
+    problem = lib.unit_name_problem(args.unit)
+    if problem:
+        lib.die(problem)
+    root = Path(args.root)
+    if root.exists() and not root.is_dir():
+        lib.die(f"--root がディレクトリではありません: {root}")
+    unique_root = Path(args.unique_root) if args.unique_root else root
+    existing = lib.find_unit_dir(
+        unique_root, args.unit, recursive=bool(args.unique_root)
+    )
+    if existing is not None:
+        lib.die(
+            f"同じ作業単位の workdir が既にあります: {existing}"
+            "(番号違いの重複を作らないよう、既存の workdir で再開してください)"
+        )
+    return lib.numbered_workdir(root, args.unit), args.unit
+
+
 def cmd_init(args: argparse.Namespace) -> None:
     defn = lib.load_def(Path(args.def_path))
-    workdir = Path(args.workdir)
+    workdir, unit = _init_workdir(args)
     sp = lib.state_path(workdir)
     if sp.exists():
         lib.die(f"state.json は既に存在します: {sp}(再初期化はできません)")
     workdir.mkdir(parents=True, exist_ok=True)
     state = {
         "workflow": defn["name"],
-        "unit": args.unit or workdir.name,
+        "unit": unit,
         "state": defn["initial"],
         "approvals": {g: False for g in lib.gates_of(defn)},
         "created": lib.today(),
@@ -44,6 +75,7 @@ def cmd_init(args: argparse.Namespace) -> None:
     print(
         f"初期化しました: {sp}(workflow={state['workflow']}, unit={state['unit']}, state={state['state']})"
     )
+    print(f"workdir: {workdir}")
 
 
 def _load_pair(args: argparse.Namespace) -> tuple[dict, Path, dict]:
@@ -125,10 +157,13 @@ def cmd_show(args: argparse.Namespace) -> None:
 def cmd_scan(args: argparse.Namespace) -> None:
     """root 以下の全 workdir(state.json を含むディレクトリ)の状態を横断集約する。
 
-    再開時の現在地復元に使う。定義と workflow 名が一致しない state.json は
-    対象外として別掲する(他ワークフローの workdir が混在してよい)。
+    再開時の現在地復元に使う。`--def` は複数指定でき、指定した全定義の workdir を
+    1 回の走査で集約する(階層を分けて複数のワークフローを併用する構成に対応する。
+    例: roadmap のディレクトリと、その配下の unit の workdir)。どの定義とも
+    workflow 名が一致しない state.json は対象外として別掲する。
     """
-    defn = lib.load_def(Path(args.def_path))
+    defns = [lib.load_def(Path(p)) for p in args.def_paths]
+    by_name = {d["name"]: d for d in defns}
     root = Path(args.root)
     if not root.is_dir():
         lib.die(f"root が存在しません: {root}")
@@ -141,7 +176,8 @@ def cmd_scan(args: argparse.Namespace) -> None:
         except json.JSONDecodeError:
             others.append({"workdir": str(workdir), "note": "state.json が不正な JSON"})
             continue
-        if state.get("workflow") != defn["name"]:
+        defn = by_name.get(state.get("workflow"))
+        if defn is None:
             others.append(
                 {
                     "workdir": str(workdir),
@@ -157,6 +193,7 @@ def cmd_scan(args: argparse.Namespace) -> None:
         rows.append(
             {
                 "workdir": str(workdir),
+                "workflow": defn["name"],
                 "unit": state.get("unit", ""),
                 "state": current,
                 "final": lib.is_final(defn, current),
@@ -166,7 +203,7 @@ def cmd_scan(args: argparse.Namespace) -> None:
         )
     done = sum(1 for r in rows if r["final"])
     result = {
-        "workflow": defn["name"],
+        "workflows": [d["name"] for d in defns],
         "total": len(rows),
         "completed": done,
         "units": rows,
@@ -175,7 +212,8 @@ def cmd_scan(args: argparse.Namespace) -> None:
     if args.json:
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return
-    print(f"workflow: {defn['name']}  対象: {len(rows)} 件(完了 {done} 件)")
+    names = ", ".join(result["workflows"])
+    print(f"workflow: {names}  対象: {len(rows)} 件(完了 {done} 件)")
     for r in rows:
         mark = "✅" if r["final"] else "▶"
         nxt = (
@@ -185,7 +223,10 @@ def cmd_scan(args: argparse.Namespace) -> None:
             )
             or "(なし)"
         )
-        print(f"{mark} {r['unit']}\t{r['state']}\t次: {nxt}\t({r['workdir']})")
+        print(
+            f"{mark} [{r['workflow']}] {r['unit']}\t{r['state']}"
+            f"\t次: {nxt}\t({r['workdir']})"
+        )
     for o in others:
         print(f"— 対象外: {o['workdir']}({o['note']})")
     if not rows:
@@ -246,8 +287,22 @@ def main() -> None:
         p.add_argument("--workdir", required=True, help="成果物ディレクトリ")
 
     p = sub.add_parser("init", help="state.json を初期化する")
-    add_common(p)
-    p.add_argument("--unit", help="作業単位名(省略時は workdir 名)")
+    p.add_argument("--def", dest="def_path", required=True, help="ワークフロー定義 JSON")
+    where = p.add_mutually_exclusive_group(required=True)
+    where.add_argument("--workdir", help="成果物ディレクトリ(採番しない)")
+    where.add_argument(
+        "--root", help="workdir を作るルート(例: docs/specs)。直下に NNN-<unit> を採番する"
+    )
+    p.add_argument(
+        "--unit", help="作業単位名(--root では必須。--workdir では省略時に workdir 名)"
+    )
+    p.add_argument(
+        "--unique-root",
+        dest="unique_root",
+        help="unit 名の一意性を検査する範囲(既定は --root の直下)。"
+        "指定するとその配下の全階層を走査する(例: --root docs/specs/001-mvp "
+        "--unique-root docs/specs で roadmap を跨いだ重複を拒否する)",
+    )
     p.set_defaults(func=cmd_init)
 
     p = sub.add_parser("set-state", help="ゲートなし遷移で状態を進める")
@@ -273,7 +328,11 @@ def main() -> None:
         "scan", help="root 以下の全 workdir の状態を横断集約する(read-only)"
     )
     p.add_argument(
-        "--def", dest="def_path", required=True, help="ワークフロー定義 JSON"
+        "--def",
+        dest="def_paths",
+        action="append",
+        required=True,
+        help="ワークフロー定義 JSON(複数指定できる。指定した全定義の workdir を集約する)",
     )
     p.add_argument("--root", required=True, help="走査ルート(例: docs/specs)")
     p.add_argument("--json", action="store_true", help="JSON で出力する")
