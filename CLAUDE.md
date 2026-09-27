@@ -14,23 +14,6 @@ YOLO 形式の ONNX モデルで動作する顔検出・顔認証・物体検出
 - ライブラリ・関数・変数・ファイルパスなどの識別子は当該エコシステムの慣習に従う(通常は英語)。
 - 仕様書・テスト項目・ログメッセージ・エラーメッセージの自然言語部分は日本語にする。
 
-## 開発コマンド
-
-```bash
-# ビルド
-dotnet build
-
-# テスト
-dotnet test
-```
-
-## 技術スタック
-
-- .NET 10 / C#(クラスライブラリ)
-- Microsoft.ML.OnnxRuntime(CPU 推論)
-- OpenCvSharp4(画像処理)
-- xUnit(テスト)
-
 ## .NET コーディング規約
 
 - nullable reference types を有効にする(`<Nullable>enable</Nullable>`)
